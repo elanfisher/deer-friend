@@ -768,7 +768,7 @@ function startJump() {
 }
 
 function startPlay() {
-  setState('play'); deer.playDur = rand(4, 6.5); deer.hopIdx = -1; deer.hopT = 0; deer.dart = false; deer.target = null;
+  setState('play'); deer.playDur = rand(8, 13); deer.hopIdx = -1; deer.hopT = 0; deer.dart = false; deer.target = null;
 }
 
 function walkTo(x, y, run, after) {
@@ -895,27 +895,33 @@ function playStep(dt) {
   if (deer.hopIdx < 0 || deer.hopT >= deer.hopLen) {
     if (deer.hopIdx >= 0 && deer.st > deer.playDur) { deer.z = 0; deer.dart = false; setState('stand'); deer.idleDur = rand(1.5, 3); return; }
     deer.hopIdx++; deer.hopT = 0;
-    const prev = deer.playV;
-    // every so often she scatters: a fast, long leap snapping back the other way
-    deer.dart = deer.hopIdx > 0 && Math.abs(prev.x) > 5 && Math.random() < 0.33;
+    // She bounds a long way in one direction, then scatters: a fast leap that snaps her
+    // back the other way, and off she goes again.
+    const b = bounds(), edge = 30;
+    const nearEdge = (deer.playDir > 0 && deer.x > b.x1 - edge) || (deer.playDir < 0 && deer.x < b.x0 + edge);
+    deer.dart = deer.hopIdx > 0 && (deer.runLeft <= 0 || nearEdge);
+    if (deer.hopIdx === 0) {
+      deer.playDir = deer.x < (b.x0 + b.x1) / 2 ? 1 : -1;
+      deer.runLeft = rand(2, 4);
+    }
     if (deer.dart) {
+      deer.playDir = -deer.playDir;
+      deer.runLeft = rand(2, 4);                                // next long stretch
       deer.hopLen = 0.36;
-      deer.playV = { x: -sign(prev.x) * rand(66, 84), y: rand(-12, 12) };
+      deer.playV = { x: deer.playDir * rand(66, 84), y: rand(-12, 12) };
       spawn('dust', deer.x - 4, deer.y); spawn('dust', deer.x + 4, deer.y);
     } else {
-      deer.hopLen = rand(0.36, 0.48);
-      const bf = butterflies[0];
-      const ang = Math.random() < 0.4 && bf ? Math.atan2(bf.y - deer.y, bf.x - deer.x) : rand(0, TAU);
-      deer.playV = { x: Math.cos(ang) * 30, y: Math.sin(ang) * 14 };
+      deer.hopLen = rand(0.36, 0.46);
+      deer.playV = { x: deer.playDir * rand(42, 54), y: rand(-9, 9) };   // keep bounding the same way
     }
     if (Math.abs(deer.playV.x) > 3) deer.face = sign(deer.playV.x);
   }
+  deer.runLeft -= dt;
   const p = deer.hopT / deer.hopLen;
   deer.z = Math.sin(p * Math.PI) * (deer.dart ? 10 : 7);
   const b = bounds();
   deer.x = clamp(deer.x + deer.playV.x * dt, b.x0, b.x1);
   deer.y = clamp(deer.y + deer.playV.y * dt, b.y0, b.y1);
-  if (deer.x <= b.x0 || deer.x >= b.x1) deer.playV.x *= -1;
 }
 
 function jumpStep(dt) {
