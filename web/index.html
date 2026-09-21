@@ -20,7 +20,8 @@
   html, body { margin: 0; height: 100%; background: #6fa74d; overflow: hidden; }
   html.desktop, html.desktop body { background: transparent; }
   html.desktop #panel, html.desktop #toast, html.desktop #lab { display: none !important; }
-  canvas#world { position: absolute; left: 0; top: 0; image-rendering: pixelated; cursor: none; }
+  canvas#world, canvas.deerCanvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; cursor: none; }
+  canvas.deerCanvas { pointer-events: none; }
   #panel {
     position: fixed; top: 12px; left: 12px; width: 262px;
     background: var(--paper); color: var(--ink);
@@ -58,6 +59,7 @@
   #hide { position: absolute; top: 6px; right: 6px; padding: 1px 5px; font-size: 8px; box-shadow: none; }
   #panel.min > :not(h1):not(#hide) { display: none; }
   #labBtn { width: 100%; margin-top: 8px; padding: 7px 4px; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; margin-top: 6px; }
   #lab {
     position: fixed; inset: 0; z-index: 50; display: none; overflow-y: auto;
     background: var(--paper); color: var(--ink); font-family: 'Press Start 2P', ui-monospace, monospace;
@@ -127,7 +129,13 @@
       <li>Move slowly and she comes to say hi</li>
     </ul>
   </details>
-  <div class="row" style="margin-top:6px"><label><input type="checkbox" id="debug"> show reaction radii</label></div>
+  <div class="opts">
+    <label><input type="checkbox" id="opt-friend"> friend mode</label>
+    <label><input type="checkbox" id="opt-ignore"> ignore cursor</label>
+    <label><input type="checkbox" id="opt-watch"> watch cursor</label>
+    <label><input type="checkbox" id="opt-follow"> follow cursor</label>
+    <label><input type="checkbox" id="debug"> reaction radii</label>
+  </div>
   <button id="labBtn">🎨 Design Lab</button>
 </div>
 <div id="toast"></div>
@@ -285,14 +293,18 @@ let C;
 function buildConfig() {
   C = {};
   for (const [k] of PARTS) C[k] = VARIANTS[k][clamp(SEL[k] | 0, 0, 9)];
-  // spots laid out to fit this torso: two neat rows along the spine + sparse flank scatter
+  C.ver = (C.ver || 0) + 1 + Math.random();   // lets each deer know to re-lay her spots
+  C.spots = [];
+}
+// Spots laid out to fit the current torso: two neat rows along the spine + sparse flank scatter.
+function makeSpots(seed) {
   const T = C.torso, rearX = 41 - T.L / 2, frontX = 41 + T.L / 2, topY = 41 - T.D / 2;
-  const r = mulberry32(7), sp = [];
+  const r = mulberry32(seed), sp = [];
   for (let x = rearX + 3; x <= frontX - 6; x += 2.3) sp.push([x + r() * 0.5, topY + 1.3 + r() * 0.5]);
   for (let x = rearX + 4; x <= frontX - 8; x += 2.7) sp.push([x + r() * 0.8, topY + 3.7 + r() * 0.7]);
   const n = Math.round(T.L / 3);
   for (let i = 0; i < n; i++) sp.push([rearX + 4 + r() * (T.L - 13), topY + 5.5 + r() * (T.D * 0.62 - 5.5)]);
-  C.spots = sp;
+  return sp;
 }
 function saveSel() { try { localStorage.setItem('deerSel', JSON.stringify(SEL)); } catch (e) {} }
 buildConfig();
@@ -598,6 +610,8 @@ function pixelize() {
 }
 
 function renderDeer(P, t) {
+  if (deer.spotsVer !== C.ver) { deer.spots = makeSpots(deer.seed); deer.spotsVer = C.ver; }
+  C.spots = deer.spots;
   dg.clearRect(0, 0, DW, DH);
   dg.save(); dg.translate(0, PAD);
   if (P.lie >= 1) drawCurled(dg, P, t); else drawStanding(dg, P);
@@ -607,11 +621,10 @@ function renderDeer(P, t) {
 
 // ─────────────────────────── world ───────────────────────────
 const canvas = document.getElementById('world');
-const wg = canvas.getContext('2d');
+let wg = canvas.getContext('2d');
 let SCALE = 4, W = 320, H = 180, HORIZON = 60;
 const bg = document.createElement('canvas');
 const DESK_CW = 220;   // desktop canvas width (logical px)
-let deskOx = -1;
 let tufts = [], flowers = [], clouds = [], butterflies = [];
 const FLOWER_COLS = ['#f2c94c', '#e8833a', '#fbf8ef', '#b48ad6', '#f2c94c'];
 
@@ -675,20 +688,28 @@ function buildProps() {
 }
 
 function resize() {
+  if (!innerWidth || !innerHeight) return;   // not laid out yet — a resize event will follow
   const h = innerHeight;
   SCALE = DESK ? (window.DEER_SCALE || 1) : h < 520 ? 2 : h < 820 ? 3 : 4;
   W = Math.ceil(innerWidth / SCALE); H = Math.ceil(innerHeight / SCALE);
   HORIZON = DESK ? 0 : Math.round(H * 0.34);
-  // desktop: a small canvas that slides along with her, so only a tiny texture repaints each frame
-  const CW = DESK ? Math.min(DESK_CW, W) : W;
-  canvas.width = CW; canvas.height = H;
-  canvas.style.width = CW * SCALE + 'px'; canvas.style.height = H * SCALE + 'px';
-  wg.imageSmoothingEnabled = false;
+  // desktop: each deer gets a small canvas that slides along with her, so only tiny textures repaint
+  for (const cv of [canvas, ...herd.slice(1).map(d => d.cv)]) sizeCanvas(cv);
+  for (const d of herd) d.ox = null;
   if (!DESK) buildBackground();
   buildProps();
   const b = bounds();
-  if (!deer.x) { deer.x = W * 0.55; deer.y = (b.y0 + b.y1) / 2; }
-  deer.x = clamp(deer.x, b.x0, b.x1); deer.y = clamp(deer.y, b.y0, b.y1);
+  for (const d of herd) {
+    if (!d.x) { d.x = W * 0.55; d.y = (b.y0 + b.y1) / 2; }
+    d.x = clamp(d.x, b.x0, b.x1); d.y = clamp(d.y, b.y0, b.y1);
+    if (d.target) { d.target.x = clamp(d.target.x, b.x0, b.x1); d.target.y = clamp(d.target.y, b.y0, b.y1); }
+  }
+}
+function sizeCanvas(cv) {
+  const CW = DESK ? Math.min(DESK_CW, W) : W;
+  cv.width = CW; cv.height = H;
+  cv.style.width = CW * SCALE + 'px'; cv.style.height = H * SCALE + 'px';
+  cv.getContext('2d').imageSmoothingEnabled = false;
 }
 
 // ─────────────────────────── input ───────────────────────────
@@ -728,14 +749,23 @@ const WALK = 20, RUN = 72, JUMP_H = 16, JUMP_DUR = 0.62;
 const CURIOUS_DIST = 120, CURIOUS_SPEED = 380;
 const PET_DIST = 20, PET_SPEED = 170, HOLD = 0.45;
 
-const deer = {
-  x: 0, y: 0, z: 0, face: 1, state: 'stand', st: 0, phase: 0, idleDur: 3, since: 0,
-  target: null, targetRun: false, afterArrive: null, flower: null,
-  jumpVX: 0, jumpVY: 0,
-  playDur: 5, playV: { x: 0, y: 0 }, hopIdx: -1, sleepDur: 30, lie: 0, trust: 0, hold: 0,
-  look: null, sm: null, fx: 0,
-};
+function newDeer(seed) {
+  const spr = document.createElement('canvas'); spr.width = DW; spr.height = DH;
+  return {
+    seed, spr, x: 0, y: 0, z: 0, face: 1, state: 'stand', st: 0, phase: 0, idleDur: 3, since: 0,
+    target: null, targetRun: false, afterArrive: null, flower: null,
+    jumpVX: 0, jumpVY: 0, chase: null, emitT: 0,
+    playDur: 5, playV: { x: 0, y: 0 }, hopIdx: -1, sleepDur: 30, lie: 0, trust: 0, hold: 0,
+    sm: null,
+  };
+}
+// Every behavior function below acts on `deer`; the loop points it at each member of the herd in turn.
+const herd = [newDeer(7)];
+let deer = herd[0];
 let auto = true;
+
+// Options (the Mac app sets these from its menu; the browser panel has checkboxes)
+const OPT = Object.assign({ ignore: false, watch: true, follow: false, friend: false }, window.DEER_OPTS || {});
 
 const LABELS = {
   stand: 'standing', look: 'looking around', walk: 'walking', run: 'running', jump: 'jumping',
@@ -868,6 +898,7 @@ function keyDir() {
 function cursorReact(dt) {
   const s = deer.state;
   const engaged = s === 'curious' || s === 'fed' || s === 'pet';
+  if (OPT.ignore) { if (engaged) { setState('look'); deer.idleDur = rand(2, 4); } return false; }   // auto mode: pay no attention
   if (!mouse.inside) { if (engaged) setState(auto ? 'look' : 'stand'); return false; }
   const b = bodyCenter();
   const dBody = Math.hypot(mouse.x - b.x, mouse.y - b.y);
@@ -918,6 +949,15 @@ function playStep(dt) {
       deer.playDir = deer.x < (b.x0 + b.x1) / 2 ? 1 : -1;
       deer.runLeft = rand(2, 4);
     }
+    // playing with a friend: chase her if she's far off, otherwise bound alongside her
+    const pal = deer.chase;
+    if (pal && pal.state === 'play' && deer.hopIdx > 0) {
+      const dx = pal.x - deer.x;
+      const want = Math.abs(dx) > 34 ? sign(dx) : pal.playDir;
+      deer.dart = want !== deer.playDir;
+      if (deer.dart) deer.playDir = -want;   // flipped back just below
+      deer.runLeft = 99;
+    }
     if (deer.dart) {
       deer.playDir = -deer.playDir;
       deer.runLeft = rand(2, 4);                                // next long stretch
@@ -955,15 +995,22 @@ function jumpStep(dt) {
   }
 }
 
-function update(dt, t) {
-  deer.st += dt; deer.since += dt;
-
+function updateWorld(dt, t) {
   // cursor tracking (speed in real screen px/s so thresholds don't depend on SCALE)
   const mdx = mouse.cx - mouse.lcx, mdy = mouse.cy - mouse.lcy;
   mouse.speed = mouse.speed * 0.65 + (Math.hypot(mdx, mdy) / Math.max(dt, 1e-3)) * 0.35;
   mouse.still = Math.hypot(mdx, mdy) > 0.5 ? 0 : (mouse.still || 0) + dt;
   mouse.lcx = mouse.cx; mouse.lcy = mouse.cy;
   mouse.x = mouse.cx / SCALE; mouse.y = mouse.cy / SCALE;
+
+  for (const f of flowers) if (f.eaten && (f.regrow -= dt) <= 0) f.eaten = false;
+  updateButterflies(dt, t);
+  updateParticles(dt, t);
+  socialStep(dt);
+}
+
+function updateDeer(dt) {
+  deer.st += dt; deer.since += dt;
 
   // lying down / getting up
   const lieTarget = deer.state === 'sleep' || deer.state === 'rest' ? 1 : 0;
@@ -973,7 +1020,7 @@ function update(dt, t) {
   const s = deer.state;
   if (s === 'curious' || s === 'fed' || s === 'pet') deer.since = 0;
 
-  if (auto) autoStep(dt); else manualStep(dt);
+  if (auto || deer !== herd[0]) autoStep(dt); else manualStep(dt);   // the friend always does her own thing
   // ears swivel independently to listen: each picks a new direction now and then
   const es = deer.ears || (deer.ears = { n: 0, f: 0, tn: 0, tf: 0, cd: 1 });
   if ((es.cd -= dt) <= 0) {
@@ -991,15 +1038,101 @@ function update(dt, t) {
   updateHeadMode(dt);
   // airborne phase of each gallop stride
   if (deer.state === 'run') deer.z = Math.max(0, Math.sin(deer.phase * TAU)) * 5.5;
+  emitParticles(dt);
+}
 
-  // flowers regrow
-  for (const f of flowers) if (f.eaten && (f.regrow -= dt) <= 0) f.eaten = false;
-  updateButterflies(dt, t);
-  updateParticles(dt, t);
+// ─────────────────────────── friend mode ───────────────────────────
+// A "director" that every so often has the two fawns do something together:
+// play (one chases the other), run around together, sleep side by side, or drift apart.
+const social = { cd: 4, legs: 0, sleepDur: 30, dir: 1 };
+const FREE = ['stand', 'look', 'stare', 'graze', 'chew', 'chewlook', 'walk'];
+function asDeer(d, fn) { const keep = deer; deer = d; fn(); deer = keep; }
+
+function setFriend(on) {
+  OPT.friend = on;
+  if (on && herd.length === 1) {
+    const f = newDeer(23), b = bounds();
+    f.x = clamp(herd[0].x + (herd[0].x > (b.x0 + b.x1) / 2 ? -60 : 60), b.x0, b.x1);
+    f.y = DESK ? b.y0 : clamp(herd[0].y - 6, b.y0, b.y1);   // a touch further back, so they layer nicely
+    f.face = sign(herd[0].x - f.x);
+    if (DESK) {
+      f.cv = document.createElement('canvas'); f.cv.className = 'deerCanvas';
+      document.body.insertBefore(f.cv, canvas); sizeCanvas(f.cv);
+    }
+    herd.push(f);
+    herd[0].partner = f; f.partner = herd[0];
+    social.cd = 3;
+  } else if (!on && herd.length > 1) {
+    const f = herd.pop();
+    f.cv?.remove();
+    herd[0].partner = null; herd[0].chase = null;
+    particles = particles.filter(p => p.owner !== f);
+  }
+}
+
+function socialStep(dt) {
+  if (herd.length < 2 || !auto) return;
+  const [a, b] = herd;
+  if ((social.cd -= dt) > 0) return;
+  if (!FREE.includes(a.state) || !FREE.includes(b.state)) { social.cd = 1; return; }
+  social.cd = rand(10, 18);
+  const sleepy = a.since > 25 && b.since > 25;
+  const r = Math.random();
+  const lead = Math.random() < 0.5 ? a : b, other = lead === a ? b : a;
+  if (r < 0.36) {                                     // play together: one leads, the other chases
+    const dur = rand(8, 13);
+    asDeer(lead, () => { startPlay(); deer.playDur = dur; deer.chase = null; });
+    asDeer(other, () => { startPlay(); deer.playDur = dur; deer.chase = lead; });
+  } else if (r < 0.6) {                               // run around together
+    social.legs = 2 + Math.floor(Math.random() * 2);
+    social.dir = lead.x < (bounds().x0 + bounds().x1) / 2 ? 1 : -1;
+    socialRunLeg(lead, other);
+  } else if (r < (sleepy ? 0.85 : 0.68)) {            // walk over and curl up side by side
+    const bb = bounds(), mx = clamp((a.x + b.x) / 2, bb.x0 + 20, bb.x1 - 20);
+    social.sleepDur = rand(25, 40);
+    asDeer(a, () => walkTo(mx - (a.x < b.x ? 13 : -13), deer.y, false, 'sleepTogether'));
+    asDeer(b, () => walkTo(mx + (a.x < b.x ? 13 : -13), deer.y, false, 'sleepTogether'));
+  } else {                                            // aloof: wander off away from each other
+    const bb = bounds(), left = a.x < b.x ? a : b, right = left === a ? b : a;
+    asDeer(left, () => walkTo(rand(bb.x0, bb.x0 + (bb.x1 - bb.x0) * 0.3), deer.y, false));
+    asDeer(right, () => walkTo(rand(bb.x1 - (bb.x1 - bb.x0) * 0.3, bb.x1), deer.y, false));
+  }
+}
+
+// One leg of running around together: both gallop to the far side, the follower just behind.
+function socialRunLeg(lead = herd[0], other = herd[1]) {
+  if (!other || social.legs-- <= 0) { if (deer.state === 'walk' || deer.state === 'run') pickNext(); return; }
+  const bb = bounds();
+  social.dir = -social.dir;
+  const tx = social.dir > 0 ? rand(bb.x1 - 80, bb.x1) : rand(bb.x0, bb.x0 + 80);
+  asDeer(lead, () => walkTo(tx, deer.y, true, 'runLeg'));
+  asDeer(other, () => walkTo(tx - social.dir * 22, deer.y, true, null));
+}
+
+// "Follow the cursor": walk (or run, if it's far) to stand beside it. Returns true while travelling.
+function followCursor(dt) {
+  if (!OPT.follow || OPT.ignore || !mouse.inside) return false;
+  const s = deer.state;
+  if (['curious', 'fed', 'pet', 'jump', 'sleep', 'rest'].includes(s)) return false;
+  const side = deer === herd[0] ? 0 : (deer.x < mouse.x ? -24 : 24);   // the friend keeps a little to one side
+  const b = bounds(), tx = clamp(mouse.x + side, b.x0, b.x1), dx = tx - deer.x;
+  if (Math.abs(dx) > 22 || ((s === 'walk' || s === 'run') && Math.abs(dx) > 4)) {
+    const run = Math.abs(dx) > 110 || (s === 'run' && Math.abs(dx) > 40);
+    if (s !== (run ? 'run' : 'walk')) setState(run ? 'run' : 'walk');
+    deer.target = null; deer.afterArrive = null;
+    stepToward(tx, deer.y, run ? RUN : WALK * 1.6, dt);
+    return true;
+  }
+  if (s === 'walk' || s === 'run' || s === 'play') {
+    setState('stand'); deer.idleDur = rand(2, 4);
+    if (Math.abs(mouse.x - deer.x) > 6) deer.face = sign(mouse.x - deer.x);
+  }
+  return false;
 }
 
 function autoStep(dt) {
   cursorReact(dt);
+  if (followCursor(dt)) return;
   const s = deer.state;
   switch (s) {
     case 'curious': case 'fed': case 'pet': break;
@@ -1008,10 +1141,15 @@ function autoStep(dt) {
     case 'walk': case 'run':
       if (!deer.target || stepToward(deer.target.x, deer.target.y, s === 'run' ? RUN : WALK, dt)) {
         deer.target = null;
-        if (deer.afterArrive === 'graze') {
-          deer.afterArrive = null;
+        const after = deer.afterArrive; deer.afterArrive = null;
+        if (after === 'graze') {
           if (deer.flower) deer.face = sign(deer.flower.x - deer.x);
           setState('graze'); deer.idleDur = rand(4, 7);
+        } else if (after === 'runLeg') socialRunLeg();
+        else if (after === 'sleepTogether') {
+          const f = deer.partner;
+          if (f) deer.face = sign(f.x - deer.x) || deer.face;       // curl up facing her friend
+          setState('sleep'); deer.sleepDur = social.sleepDur;
         } else pickNext();
       }
       break;
@@ -1094,7 +1232,8 @@ function gait(P, phase, A, F, offs) {
 
 const TRACK_STATES = ['stand', 'look', 'chew', 'chewlook', 'stare', 'curious', 'pet', 'rest'];
 function headTracking() {
-  return mouse.inside && mouse.still < 4 && TRACK_STATES.includes(deer.state) && (deer.lie === 0 || deer.state === 'rest');
+  return OPT.watch && !OPT.ignore && mouse.inside && mouse.still < 4 && TRACK_STATES.includes(deer.state) &&
+    (deer.lie === 0 || deer.state === 'rest');
 }
 
 // Which way her head points relative to her body, with hysteresis so it doesn't flicker.
@@ -1262,9 +1401,8 @@ function updateButterflies(dt, t) {
 }
 
 let particles = [];
-let emitT = 0;
 function spawn(type, x, y, c) {
-  const p = { type, x, y, c, life: 1, vx: 0, vy: 0 };
+  const p = { type, x, y, c, life: 1, vx: 0, vy: 0, owner: deer };
   if (type === 'heart') { p.vx = rand(-4, 4); p.vy = -12; p.life = 1.3; }
   if (type === 'crumb' || type === 'petal') { p.vx = rand(-12, 12); p.vy = rand(-18, -6); p.life = 0.7; p.g = 60; }
   if (type === 'z') { p.vx = 5; p.vy = -7; p.life = 2; }
@@ -1272,17 +1410,19 @@ function spawn(type, x, y, c) {
   if (type === 'bang') { p.life = 0.8; }
   particles.push(p);
 }
-function updateParticles(dt) {
-  emitT += dt;
+function emitParticles(dt) {
+  deer.emitT += dt;
   const s = deer.state, h = headPos();
-  if (emitT > 0.12) {
-    emitT = 0;
+  if (deer.emitT > 0.12) {
+    deer.emitT = 0;
     if (s === 'pet' && Math.random() < 0.3) spawn('heart', deer.x + deer.face * 4 + rand(-6, 6), deer.y - 44);
     if (s === 'fed' && Math.random() < 0.6) spawn('crumb', mouse.x, mouse.y, '#4f9a3a');
     if (s === 'graze' && Math.random() < 0.25) spawn('crumb', h.x + deer.face * 4, deer.y - 2, '#5d9a42');
     if (s === 'sleep' && deer.lie >= 1 && Math.random() < 0.12) spawn('z', deer.x + deer.face * 14, deer.y - 20);
     if (s === 'run' && Math.random() < 0.6) spawn('dust', deer.x - deer.face * 10, deer.y);
   }
+}
+function updateParticles(dt) {
   for (const p of particles) {
     p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
     if (p.g) p.vy += p.g * dt;
@@ -1321,8 +1461,8 @@ function drawDeer(t, P) {
   wg.fillRect(x - (sw >> 1) + 2 + deer.face * 2, y + 1, sw - 4, 1);
 
   const sy = Math.round(y - GROUND - deer.z);
-  if (deer.face > 0) wg.drawImage(dc, x - ANCHOR_X, sy);
-  else { wg.save(); wg.translate(x, 0); wg.scale(-1, 1); wg.drawImage(dc, -ANCHOR_X, sy); wg.restore(); }
+  if (deer.face > 0) wg.drawImage(deer.spr, x - ANCHOR_X, sy);
+  else { wg.save(); wg.translate(x, 0); wg.scale(-1, 1); wg.drawImage(deer.spr, -ANCHOR_X, sy); wg.restore(); }
 }
 
 function drawTuft(f, t) {
@@ -1357,22 +1497,45 @@ function drawClouds(t) {
   }
 }
 
-function render(t, P) {
-  if (DESK) {
-    const ox = Math.round(clamp(deer.x - canvas.width / 2, 0, W - canvas.width));
-    if (ox !== deskOx) { deskOx = ox; canvas.style.transform = `translateX(${ox * SCALE}px)`; }
-    wg.setTransform(1, 0, 0, 1, -ox, 0);
-    wg.clearRect(ox, 0, canvas.width, H);
-  } else { wg.drawImage(bg, 0, 0); drawClouds(t); }
+function render(t) {
+  if (DESK) { renderDesk(t); return; }
+  wg.drawImage(bg, 0, 0); drawClouds(t);
   const items = [];
   for (const f of tufts) items.push({ y: f.y, d: () => drawTuft(f, t) });
   for (const f of flowers) if (!f.eaten) items.push({ y: f.y, d: () => drawFlower(f) });
-  items.push({ y: deer.y + 0.5, d: () => drawDeer(t, P) });
+  for (const d of herd) items.push({ y: d.y + 0.5, d: () => { deer = d; drawDeer(t, d.P); } });
   items.sort((a, b) => a.y - b.y);
   for (const it of items) it.d();
+  deer = herd[0];
   for (const f of butterflies) drawButterfly(f, t);
+  drawParticles(particles);
 
-  for (const p of particles) {
+  if (debugBox.checked) drawDebug();
+  if (mouse.inside) {
+    if (mouse.down) drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
+    drawMap(wg, MAPS.hand, mouse.x - 4, mouse.y, { '#': '#3b2317', w: '#f6dcc0' });
+  }
+}
+
+// Desktop: every deer draws into her own small canvas that slides along the strip with her.
+function renderDesk(t) {
+  herd.forEach((d, i) => {
+    const cv = i === 0 ? canvas : d.cv;
+    wg = cv.getContext('2d'); deer = d;
+    const ox = Math.round(clamp(d.x - cv.width / 2, 0, W - cv.width));
+    if (ox !== d.ox) { d.ox = ox; cv.style.transform = `translateX(${ox * SCALE}px)`; }
+    wg.setTransform(1, 0, 0, 1, -ox, 0);
+    wg.clearRect(ox, 0, cv.width, H);
+    drawDeer(t, d.P);
+    drawParticles(particles.filter(p => p.owner === d));
+    // your real cursor is visible on the desktop; just show the clover while you're feeding her
+    if (d.state === 'fed') drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
+  });
+  wg = canvas.getContext('2d'); deer = herd[0];
+}
+
+function drawParticles(list) {
+  for (const p of list) {
     const a = Math.min(1, p.life * 2);
     wg.globalAlpha = a;
     if (p.type === 'heart') drawMap(wg, MAPS.heart, p.x - 2, p.y, { '#': '#e5484d' });
@@ -1381,16 +1544,6 @@ function render(t, P) {
     else if (p.type === 'dust') { wg.fillStyle = '#d9cfae'; wg.fillRect(Math.round(p.x), Math.round(p.y), 2, 1); }
     else { wg.fillStyle = p.c; wg.fillRect(Math.round(p.x), Math.round(p.y), 1, 1); }
     wg.globalAlpha = 1;
-  }
-
-  if (debugBox.checked) drawDebug();
-
-  if (DESK) {
-    // your real cursor is visible on the desktop; just show the clover while you're feeding her
-    if (deer.state === 'fed') drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
-  } else if (mouse.inside) {
-    if (mouse.down) drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
-    drawMap(wg, MAPS.hand, mouse.x - 4, mouse.y, { '#': '#3b2317', w: '#f6dcc0' });
   }
 }
 
@@ -1493,29 +1646,70 @@ addEventListener('resize', resize);
 resize();
 
 let last = performance.now(), T = 0, lastUi = '';
+// On the desktop, drive the loop with a timer instead of requestAnimationFrame: rAF would wake us
+// at the display's refresh rate (up to 144Hz) just to skip most frames. Pixel art doesn't need it:
+// 24fps while something's moving, 12fps while idle, 8fps while everyone's asleep.
+const ACTIVE = ['walk', 'run', 'play', 'jump', 'fed', 'pet', 'curious'];
+function deskFps() {
+  const watching = OPT.watch && !OPT.ignore && mouse.still < 1 && herd.some(d => TRACK_STATES.includes(d.state));
+  if (watching || herd.some(d => ACTIVE.includes(d.state) || d.swat > 0)) return 24;
+  if (herd.every(d => d.state === 'sleep' && d.lie >= 1)) return 8;
+  return 12;
+}
+let paused = false;   // the Mac app pauses the loop entirely while she's hidden
+function scheduleFrame() {
+  if (paused) return;
+  if (DESK) setTimeout(() => frame(performance.now()), 1000 / deskFps());
+  else requestAnimationFrame(frame);
+}
+
 function frame(now) {
-  if (DESK && now - last < 40) { requestAnimationFrame(frame); return; }   // ~24fps on the desktop — plenty for pixel art
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
-  update(dt, T);
-  const P = smoothPose(poseFor(T), dt);
-  P.lie = deer.lie >= 0.6 ? 1 : 0;
-  renderDeer(P, T);
-  render(T, P);
+  updateWorld(dt, T);
+  for (const d of herd) {
+    deer = d;
+    updateDeer(dt);
+    const P = smoothPose(poseFor(T), dt);
+    P.lie = deer.lie >= 0.6 ? 1 : 0;
+    renderDeer(P, T);
+    const g = d.spr.getContext('2d'); g.clearRect(0, 0, DW, DH); g.drawImage(dc, 0, 0);
+    d.P = P;
+  }
+  deer = herd[0];
+  render(T);
   const ui = LABELS[deer.state] || deer.state;
   if (ui !== lastUi) { stateEl.textContent = ui; lastUi = ui; }
   trustEl.style.width = Math.round(deer.trust * 100) + '%';
-  requestAnimationFrame(frame);
+  scheduleFrame();
 }
-requestAnimationFrame(frame);
+scheduleFrame();
 
 window.deerDesktop = {
   cursor(x, y, down) { mouse.cx = x; mouse.cy = y; mouse.inside = true; mouse.down = down; },
   setScale(s) { window.DEER_SCALE = s; resize(); },
+  setOptions(o) { Object.assign(OPT, o); setFriend(!!OPT.friend); syncOptionBoxes(); },
+  setPaused(p) {
+    if (p === paused) return;
+    paused = p;
+    if (!p) { last = performance.now(); scheduleFrame(); }   // resume without a giant time step
+  },
 };
+function syncOptionBoxes() {
+  for (const k of ['ignore', 'watch', 'follow', 'friend']) {
+    const el = document.getElementById('opt-' + k); if (el) el.checked = !!OPT[k];
+  }
+}
+for (const k of ['ignore', 'watch', 'follow', 'friend']) {
+  document.getElementById('opt-' + k)?.addEventListener('change', e => {
+    window.deerDesktop.setOptions({ [k]: e.target.checked }); e.target.blur();
+  });
+}
+setFriend(!!OPT.friend);
+syncOptionBoxes();
 
 // Dev hook: window.deerDebug.pose('graze') etc. from the console
 window.deerDebug = {
-  deer, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
+  get deer() { return herd[0]; }, herd, social, OPT, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
   // Render one pose synchronously (works even when rAF is paused): renderState('graze', 1.2, {lie: 1})
   renderState(state, t = 1, extra = {}) {
     const saved = { state: deer.state, st: deer.st, lie: deer.lie, z: deer.z, phase: deer.phase,

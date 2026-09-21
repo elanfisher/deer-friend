@@ -16,5 +16,8 @@ cp "Resources/Info.plist" "$APP/Contents/Info.plist"
 mkdir -p "$APP/Contents/Resources/web"
 cp web/index.html "$APP/Contents/Resources/web/index.html"
 
+# Ad-hoc sign so macOS treats it as a stable app (needed for Launch at Login).
+codesign --force --sign - "$APP" >/dev/null
+
 echo "Built $APP"
 echo "Run it with:  open \"$APP\""
