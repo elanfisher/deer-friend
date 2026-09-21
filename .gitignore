@@ -1,0 +1,4 @@
+.build/
+DeerFriend.app/
+*.swiftpm
+.DS_Store
