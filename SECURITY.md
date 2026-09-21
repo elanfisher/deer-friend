@@ -20,6 +20,18 @@ instead of a public issue.
 
 ## Automated checks
 
-- CodeQL (Swift, JavaScript, GitHub Actions) on every push and pull request, plus weekly.
-- Gitleaks secret scanning over the full git history.
-- Dependabot keeps the GitHub Actions up to date.
+Every push and pull request (and weekly) runs:
+
+| Check | What it looks for |
+| --- | --- |
+| **ClamAV** | Malware in the source tree *and* in the built `DeerFriend.app`, with freshly updated virus definitions |
+| **Binary audit** | The app links only Apple system frameworks, contains no URLs, requests no entitlements, and has a valid code signature |
+| **Web page audit** | `web/index.html` references no hosts other than the Google font |
+| **CodeQL** | Security and quality issues in the Swift, the JavaScript, and the workflows |
+| **Semgrep** | Known-dangerous code patterns (JavaScript, secrets, GitHub Actions) |
+| **Gitleaks + TruffleHog** | Secrets anywhere in the git history (two independent scanners) |
+| **zizmor** | Security problems in the GitHub Actions workflows themselves |
+| **OpenSSF Scorecard** | Supply-chain hygiene; results appear under Security → Code scanning |
+
+Every action is pinned to an exact commit and every scanner image to an exact digest, so a
+compromised upstream tag can't change what runs. Dependabot proposes updates to the actions.
