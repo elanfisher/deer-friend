@@ -3,8 +3,7 @@
 name: Static analysis
 
 on:
-  push:
-    branches: [main]
+  push: # every branch, so findings show up before a pull request is opened
   pull_request:
 
 permissions:
