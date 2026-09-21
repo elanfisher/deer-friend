@@ -5,3 +5,5 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7 # let a new release age a week before adopting it (bad releases get pulled fast)

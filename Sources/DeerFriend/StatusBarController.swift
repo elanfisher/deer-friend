@@ -18,7 +18,7 @@ protocol DeerMenuHost: AnyObject {
 
 /// Toggles shared with the page (web/index.html reads them as OPT.<rawValue>).
 enum DeerOption: String, CaseIterable {
-    case friend, ignore, watch, follow
+    case friend, ignore, watch, follow, shy, onTop
 
     var title: String {
         switch self {
@@ -26,6 +26,8 @@ enum DeerOption: String, CaseIterable {
         case .ignore: return "Auto Mode (Ignore Cursor)"
         case .watch: return "Watch the Cursor"
         case .follow: return "Follow the Cursor"
+        case .shy: return "Move Out of the Way When Hovered"
+        case .onTop: return "Keep on Top of Windows"
         }
     }
 
@@ -66,12 +68,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(toggle(.friend))
         menu.addItem(.separator())
 
-        for option in [DeerOption.ignore, .watch, .follow] {
+        for option in [DeerOption.ignore, .watch, .follow, .shy] {
             let entry = toggle(option)
             if option != .ignore && host.option(.ignore) { entry.isEnabled = false }   // auto mode overrides these
             menu.addItem(entry)
         }
         menu.addItem(.separator())
+
+        menu.addItem(toggle(.onTop))
 
         menu.addItem(submenu("Live On", homeItems(host)))
         menu.addItem(submenu("Display", NSScreen.screens.map { screen in
