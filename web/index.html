@@ -18,6 +18,8 @@
     --heart: #e5484d;
   }
   html, body { margin: 0; height: 100%; background: #6fa74d; overflow: hidden; }
+  html.desktop, html.desktop body { background: transparent; }
+  html.desktop #panel, html.desktop #toast, html.desktop #lab { display: none !important; }
   canvas#world { position: absolute; left: 0; top: 0; image-rendering: pixelated; cursor: none; }
   #panel {
     position: fixed; top: 12px; left: 12px; width: 262px;
@@ -146,6 +148,10 @@
 <script>
 (() => {
 'use strict';
+
+// Desktop mode: hosted by the Mac app in a transparent, click-through strip above the Dock.
+const DESK = !!window.DEER_DESKTOP || /[?&]desktop\b/.test(location.search);   // ?desktop to preview in a browser
+if (DESK) document.documentElement.classList.add('desktop');
 
 // ─────────────────────────── utils ───────────────────────────
 const TAU = Math.PI * 2;
@@ -604,10 +610,13 @@ const canvas = document.getElementById('world');
 const wg = canvas.getContext('2d');
 let SCALE = 4, W = 320, H = 180, HORIZON = 60;
 const bg = document.createElement('canvas');
+const DESK_CW = 220;   // desktop canvas width (logical px)
+let deskOx = -1;
 let tufts = [], flowers = [], clouds = [], butterflies = [];
 const FLOWER_COLS = ['#f2c94c', '#e8833a', '#fbf8ef', '#b48ad6', '#f2c94c'];
 
 function bounds() {
+  if (DESK) return { x0: 30, x1: W - 30, y0: H - 7, y1: H - 4 };   // a thin ground line along the screen
   return { x0: 24, x1: W - 24, y0: HORIZON + 42, y1: H - 5 };
 }
 
@@ -644,6 +653,7 @@ function buildBackground() {
 }
 
 function buildProps() {
+  if (DESK) { tufts = []; flowers = []; clouds = []; butterflies = []; return; }
   const r = mulberry32(99), b = bounds();
   tufts = [];
   const nT = Math.floor((W * (H - HORIZON)) / 650);
@@ -666,13 +676,16 @@ function buildProps() {
 
 function resize() {
   const h = innerHeight;
-  SCALE = h < 520 ? 2 : h < 820 ? 3 : 4;
+  SCALE = DESK ? (window.DEER_SCALE || 1) : h < 520 ? 2 : h < 820 ? 3 : 4;
   W = Math.ceil(innerWidth / SCALE); H = Math.ceil(innerHeight / SCALE);
-  HORIZON = Math.round(H * 0.34);
-  canvas.width = W; canvas.height = H;
-  canvas.style.width = W * SCALE + 'px'; canvas.style.height = H * SCALE + 'px';
+  HORIZON = DESK ? 0 : Math.round(H * 0.34);
+  // desktop: a small canvas that slides along with her, so only a tiny texture repaints each frame
+  const CW = DESK ? Math.min(DESK_CW, W) : W;
+  canvas.width = CW; canvas.height = H;
+  canvas.style.width = CW * SCALE + 'px'; canvas.style.height = H * SCALE + 'px';
   wg.imageSmoothingEnabled = false;
-  buildBackground(); buildProps();
+  if (!DESK) buildBackground();
+  buildProps();
   const b = bounds();
   if (!deer.x) { deer.x = W * 0.55; deer.y = (b.y0 + b.y1) / 2; }
   deer.x = clamp(deer.x, b.x0, b.x1); deer.y = clamp(deer.y, b.y0, b.y1);
@@ -879,6 +892,7 @@ function cursorReact(dt) {
       return true;
     }
     deer.hold = 0;
+    if (s === 'curious' && mouse.still > 6) { setState(auto ? 'look' : 'stand'); deer.idleDur = rand(2, 4); return true; }
     if (inCurious || dPet < PET_DIST * 1.8) { if (s !== 'curious') setState('curious'); return true; }
     setState(auto ? 'look' : 'stand'); deer.idleDur = rand(2, 4);
     return true;
@@ -1344,8 +1358,12 @@ function drawClouds(t) {
 }
 
 function render(t, P) {
-  wg.drawImage(bg, 0, 0);
-  drawClouds(t);
+  if (DESK) {
+    const ox = Math.round(clamp(deer.x - canvas.width / 2, 0, W - canvas.width));
+    if (ox !== deskOx) { deskOx = ox; canvas.style.transform = `translateX(${ox * SCALE}px)`; }
+    wg.setTransform(1, 0, 0, 1, -ox, 0);
+    wg.clearRect(ox, 0, canvas.width, H);
+  } else { wg.drawImage(bg, 0, 0); drawClouds(t); }
   const items = [];
   for (const f of tufts) items.push({ y: f.y, d: () => drawTuft(f, t) });
   for (const f of flowers) if (!f.eaten) items.push({ y: f.y, d: () => drawFlower(f) });
@@ -1367,7 +1385,10 @@ function render(t, P) {
 
   if (debugBox.checked) drawDebug();
 
-  if (mouse.inside) {
+  if (DESK) {
+    // your real cursor is visible on the desktop; just show the clover while you're feeding her
+    if (deer.state === 'fed') drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
+  } else if (mouse.inside) {
     if (mouse.down) drawMap(wg, MAPS.clover, mouse.x - 2, mouse.y - 5, { g: '#4f9a3a', s: '#3a7a2a' });
     drawMap(wg, MAPS.hand, mouse.x - 4, mouse.y, { '#': '#3b2317', w: '#f6dcc0' });
   }
@@ -1473,6 +1494,7 @@ resize();
 
 let last = performance.now(), T = 0, lastUi = '';
 function frame(now) {
+  if (DESK && now - last < 40) { requestAnimationFrame(frame); return; }   // ~24fps on the desktop — plenty for pixel art
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   update(dt, T);
   const P = smoothPose(poseFor(T), dt);
@@ -1485,6 +1507,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+window.deerDesktop = {
+  cursor(x, y, down) { mouse.cx = x; mouse.cy = y; mouse.inside = true; mouse.down = down; },
+  setScale(s) { window.DEER_SCALE = s; resize(); },
+};
 
 // Dev hook: window.deerDebug.pose('graze') etc. from the console
 window.deerDebug = {
