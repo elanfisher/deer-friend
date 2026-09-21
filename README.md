@@ -86,3 +86,16 @@ open /tmp/deer_snapshots
 - Idle sound effects (small hoof steps, a soft chuff).
 - Swap the procedural rig for hand-painted sprite sheets if you want a more
   bespoke look, while keeping `DeerBrain`'s state machine as-is.
+
+## Browser prototype (current focus)
+
+`web/index.html` is a self-contained browser version with the redesigned
+spotted-fawn sprite (knee/hock joints, head that follows the neck, flagging
+tail, tongue), a meadow with flowers and butterflies, and an **Auto mode**
+toggle. Auto on: she roams, grazes, plays, sleeps and reacts to your cursor.
+Auto off: drive her with the keyboard/mouse (see the Controls panel).
+
+```bash
+python3 -m http.server 8742 --directory web
+open http://localhost:8742
+```

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController!
     private var timer: Timer?
     private var showDebug = false
+    private var lastWindowOrigin = NSPoint(x: .infinity, y: .infinity)
 
     // Window padding around the sprite so jump arcs / raised tail / ears never clip.
     private let paddingLeft: CGFloat = 30
@@ -56,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         win.orderFrontRegardless() // show without activating / stealing focus
 
-        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(t, forMode: .common) // keep ticking during menu tracking / scroll
@@ -70,10 +71,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let winSize = window.frame.size
 
         let origin = NSPoint(
-            x: brain.worldPosition.x - winSize.width / 2,
-            y: brain.worldPosition.y - paddingBottom
+            x: (brain.worldPosition.x - winSize.width / 2).rounded(),
+            y: (brain.worldPosition.y - paddingBottom).rounded()
         )
-        window.setFrameOrigin(origin)
+        // Repositioning is a WindowServer round-trip; skip it while she isn't
+        // actually moving (standing, grazing, sleeping, ...) to keep idle CPU low.
+        if origin != lastWindowOrigin {
+            window.setFrameOrigin(origin)
+            lastWindowOrigin = origin
+        }
 
         let topPadding = winSize.height - paddingBottom - sprite.height
         view.image = brain.currentImage
