@@ -74,10 +74,11 @@
     <button data-a="chew">Chew</button>
     <button data-a="chewlook">Chew+Look</button>
     <button data-a="look">Look</button>
+    <button data-a="stare">Stare</button>
     <button data-a="sleep">Sleep</button>
+    <button data-a="rest">Rest</button>
     <button data-a="play">Play</button>
     <button data-a="stand">Stand</button>
-    <button data-a="scare">Scare!</button>
     <button data-a="respawn">Flowers</button>
   </div>
   <details>
@@ -86,11 +87,13 @@
       <li><b>←→↑↓</b>/<b>WASD</b> walk · <b>Shift</b> run</li>
       <li><b>Space</b> jump · <b>E</b> eat · <b>C</b> chew</li>
       <li><b>V</b> chew+look · <b>L</b> look · <b>Z</b> sleep</li>
-      <li><b>P</b> play · <b>X</b> scare · <b>T</b> auto on/off</li>
+      <li><b>R</b> rest (lie down, awake)</li>
+      <li><b>P</b> play · <b>G</b> stare</li>
+      <li><b>T</b> auto on/off</li>
       <li>Click ground: walk there (shift: run)</li>
       <li>Hover near her slowly: pet</li>
       <li>Hold mouse near her mouth: feed</li>
-      <li>Auto mode: fast cursor scares her</li>
+      <li>Move slowly and she comes to say hi</li>
     </ul>
   </details>
   <div class="row" style="margin-top:6px"><label><input type="checkbox" id="debug"> show reaction radii</label></div>
@@ -124,7 +127,8 @@ const COL = {
   coatDark: '#7c4524',   // far-side legs & ear
   cream: '#f4e6cf',      // belly, muzzle, throat, eye ring
   white: '#fffbf2',      // spots, tail flag
-  earInner: '#e9b896',
+  earInner: '#f2dcc6',
+  muzzle: '#8c5f43',
   tongue: '#ec8f9c',
   tongueDeep: '#c9606f',
   nose: '#231611',
@@ -142,7 +146,7 @@ const OUTLINE_RGB = hexRgb(COL.outline);
 // Everything below is authored facing RIGHT in a 96×72 canvas, y-down, ground at y=66.
 // The rig is drawn with normal (antialiased) canvas shapes, then snapped to the palette,
 // alpha-thresholded, and outlined — so the result is crisp pixel art.
-const DW = 96, DH = 72, GROUND = 66, ANCHOR_X = 40;
+const PAD = 12, DW = 96, DH = 72 + PAD, GROUND = 66 + PAD, ANCHOR_X = 40;   // rig is authored with ground at 66
 const dc = document.createElement('canvas');
 dc.width = DW; dc.height = DH;
 const dg = dc.getContext('2d', { willReadFrequently: true });
@@ -169,8 +173,8 @@ function seg(g, ax, ay, bx, by, w1, w2, col) {
 function frontLeg(g, x, y, L, col) {
   const au = L.s + L.f * 0.35;
   const al = au - L.f * 1.75;
-  const kx = x + 11 * Math.sin(au), ky = y + 11 * Math.cos(au);
-  const hx = kx + 10.5 * Math.sin(al), hy = ky + 10.5 * Math.cos(al);
+  const kx = x + 13.5 * Math.sin(au), ky = y + 13.5 * Math.cos(au);
+  const hx = kx + 13 * Math.sin(al), hy = ky + 13 * Math.cos(al);
   seg(g, x, y, kx, ky, 3.2, 1.9, col);
   ell(g, kx, ky, 1.25, 1.25, 0, col);        // knobbly fawn knee
   seg(g, kx, ky, hx, hy, 1.7, 1.5, col);
@@ -183,9 +187,9 @@ function hindLeg(g, x, y, L, col) {
   const t1 = L.s + 0.32 + L.f * 0.55;
   const t2 = L.s - 0.5 - L.f * 0.6;
   const t3 = L.s + 0.1 + L.f * 1.05;
-  const sx = x + 9.5 * Math.sin(t1), sy = y + 9.5 * Math.cos(t1);
-  const kx = sx + 9.2 * Math.sin(t2), ky = sy + 9.2 * Math.cos(t2);
-  const hx = kx + 8.8 * Math.sin(t3), hy = ky + 8.8 * Math.cos(t3);
+  const sx = x + 11.3 * Math.sin(t1), sy = y + 11.3 * Math.cos(t1);
+  const kx = sx + 11 * Math.sin(t2), ky = sy + 11 * Math.cos(t2);
+  const hx = kx + 10.4 * Math.sin(t3), hy = ky + 10.4 * Math.cos(t3);
   seg(g, x, y, sx, sy, 5.2, 2.9, col);       // skinny thigh
   seg(g, sx, sy, kx, ky, 2.7, 1.8, col);     // gaskin
   ell(g, kx, ky, 1.15, 1.15, 0, col);        // bony hock
@@ -195,14 +199,17 @@ function hindLeg(g, x, y, L, col) {
 
 // Tail: resting = hangs down/back with brown on top. raise=1 → straight UP, white fanned (alarm flag).
 function tail(g, x, y, raise, wag) {
-  const a = lerp(2.25, 4.71, raise) + wag * 0.5;
-  const w = 1.4 + raise * 1.2;
+  const a = lerp(1.95, 4.6, raise) + wag * 0.45;   // rest: hangs down the rump · alarm: straight up
+  const len = 10.5, w = 1.9 + raise * 1.3;
+  const shape = (l, ww, c) => {
+    g.fillStyle = c; g.beginPath(); g.moveTo(0, -ww * 0.8);
+    g.quadraticCurveTo(l * 0.45, -ww * 1.25, l, 0);
+    g.quadraticCurveTo(l * 0.45, ww * 1.25, 0, ww * 0.8); g.closePath(); g.fill();
+  };
   g.save(); g.translate(x, y); g.rotate(a);
-  g.fillStyle = COL.white;                   // teardrop that tapers to a point
-  g.beginPath(); g.moveTo(0, -w); g.quadraticCurveTo(5, -w * 1.1, 7.2, 0);
-  g.quadraticCurveTo(5, w * 1.1, 0, w); g.closePath(); g.fill();
-  const br = 1 - raise * 0.85;
-  if (br > 0.05) ell(g, 3, w * 0.45, 3.2, w * 0.6 * br, 0, COL.coat);
+  shape(len, w, COL.white);                          // white fringe / underside
+  const br = 1 - raise * 0.9;                       // brown top shrinks away when flagged
+  if (br > 0.05) { g.save(); g.translate(0, -w * 0.2 * br); shape(len * 0.92, w * 0.72 * br, COL.coat); g.restore(); }
   g.restore();
 }
 
@@ -210,11 +217,13 @@ function ear(g, x, y, a, col, inner) {
   g.save(); g.translate(x, y); g.rotate(a);
   const leaf = (len, w, dx, c) => {
     g.fillStyle = c; g.beginPath(); g.moveTo(dx, -w);
-    g.quadraticCurveTo(dx + len * 0.55, -w * 1.5, dx + len, 0.2);
-    g.quadraticCurveTo(dx + len * 0.55, w * 1.35, dx, w); g.closePath(); g.fill();
+    g.quadraticCurveTo(dx + len * 0.4, -w * 1.6, dx + len * 0.68, -w * 0.75);
+    g.lineTo(dx + len, 0.25);                                   // sharp tip
+    g.lineTo(dx + len * 0.68, w * 0.65);
+    g.quadraticCurveTo(dx + len * 0.4, w * 1.45, dx, w); g.closePath(); g.fill();
   };
-  leaf(9.8, 2.1, 0, col);
-  if (inner) leaf(6.6, 1.05, 1.8, inner);
+  leaf(11.8, 2.8, 0, col);
+  if (inner) leaf(8.6, 1.6, 1.6, inner);
   g.restore();
 }
 
@@ -222,22 +231,24 @@ function ear(g, x, y, a, col, inner) {
 function head(g, P) {
   const eA = lerp(-2.75, -1.85, P.earPerk) + P.earFlick;
   ear(g, -0.8, -3.2, eA - 0.35, COL.coatDark, null);                 // far ear
-  ell(g, 1.2, 0, 4.4, 3.9, 0, COL.coat);                              // cranium
+  ell(g, 1.2, 0, 5, 4.6, 0, COL.coat);                                // cranium
   g.fillStyle = COL.coat;                                             // long, tapered muzzle
-  g.beginPath(); g.moveTo(2.5, -3.1); g.lineTo(11.2, -1.4);
-  g.quadraticCurveTo(13.8, 0.1, 11.4, 1.8); g.lineTo(3, 3.4); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(2.5, -3.7); g.lineTo(12.6, -1.6);
+  g.quadraticCurveTo(15.6, 0.2, 12.8, 2.3); g.lineTo(3, 4.3); g.closePath(); g.fill();
   ell(g, 1.4, -2.5, 3.1, 1.3, 0.15, COL.coatDeep);                   // darker forehead
-  ell(g, 8.2, 2.4 + P.chew * 1.2, 3.6, 1.1, 0.12, COL.cream);        // lower jaw (chews)
-  ell(g, 11, 1.1, 1.5, 0.95, 0, COL.cream);                          // white muzzle
+  ell(g, 9, 3.0 + P.chew * 1.2, 4.4, 1.2, 0.1, COL.cream);         // lower jaw (chews)
+  ell(g, 9.2, -1.1, 3.6, 1.0, 0.12, COL.muzzle);                    // greyish bridge of the nose
+  ell(g, 12.4, 1.0, 1.5, 0.95, 0, COL.cream);
+  ell(g, 12.5, -0.7, 0.7, 1.3, 0, COL.cream);                        // white band behind the nose                          // white muzzle
   if (P.tongue > 0.08) {                                              // blep!
     const k = P.tongue;
-    ell(g, 11.4 + k * 1.3, 2.4 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
-    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(11.7 + k * 1.2, 2.3 + k * 0.8, 1, 1);
+    ell(g, 12.8 + k * 1.3, 2.3 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
+    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(13.1 + k * 1.2, 2.2 + k * 0.8, 1, 1);
   }
-  ell(g, 12.8, -0.1, 1.35, 1.25, 0, COL.nose);                        // nose
-  ell(g, 3.6, -1.3, 2.25, 2.05, 0, COL.cream);                       // eye ring
+  ell(g, 14.2, -0.1, 1.35, 1.25, 0, COL.nose);                        // nose
+  ell(g, 3.6, -1.3, 2.45, 2.25, 0, COL.cream);                       // eye ring
   if (P.eye > 0.3) {
-    ell(g, 3.6, -1.3, 1.5 + P.eyeWide * 0.35, Math.max(0.6, 1.6 * P.eye) + P.eyeWide * 0.35, 0, COL.eye);
+    ell(g, 3.6, -1.3, 1.75 + P.eyeWide * 0.3, Math.max(0.6, 1.8 * P.eye) + P.eyeWide * 0.3, 0, COL.eye);
     g.fillStyle = COL.white; g.fillRect(3.0, -2.5, 1, 1);             // eye shine
   } else {
     g.fillStyle = COL.eye; g.fillRect(2.2, -1.1, 2.9, 0.9);          // closed, sleepy line
@@ -245,58 +256,98 @@ function head(g, P) {
   ear(g, 0.6, -3.7, eA, COL.coat, COL.earInner);                     // near ear
 }
 
+// Head turned to look straight at the viewer. Origin = top of the neck, y-down.
+function headFront(g, P) {
+  const spread = lerp(1.3, 0.62, P.earPerk) + P.earFlick * 0.5;
+  ear(g, -2.7, -2.6, -Math.PI / 2 - spread, COL.coat, COL.earInner);
+  ear(g, 2.7, -2.6, -Math.PI / 2 + spread, COL.coat, COL.earInner);
+  ell(g, 0, -0.4, 4.9, 4.2, 0, COL.coat);                          // cranium
+  g.fillStyle = COL.coat;                                            // muzzle coming toward us
+  g.beginPath(); g.moveTo(-3.9, 0.4); g.quadraticCurveTo(-3.2, 6.6, 0, 7.8);
+  g.quadraticCurveTo(3.2, 6.6, 3.9, 0.4); g.closePath(); g.fill();
+  ell(g, 0, -2.6, 2.5, 1.3, 0, COL.coatDeep);                       // forehead
+  for (const x of [-2.9, 2.9]) {
+    ell(g, x, -0.1, 1.9, 1.8, 0, COL.cream);                         // eye rings
+    if (P.eye > 0.3) {
+      ell(g, x, 0, 1.45 + P.eyeWide * 0.3, Math.max(0.6, 1.6 * P.eye) + P.eyeWide * 0.3, 0, COL.eye);
+      g.fillStyle = COL.white; g.fillRect(x - 0.95, -1.2, 0.8, 0.8);
+    } else { g.fillStyle = COL.eye; g.fillRect(x - 1.3, -0.2, 2.6, 0.8); }
+  }
+  ell(g, 0, 5.3, 2.3, 1.5, 0, COL.cream);                            // white muzzle
+  ell(g, 0, 7.8, 1.2, 0.7, 0, COL.cream);                            // chin
+  ell(g, 0, 3.4, 1.6, 0.6, 0, COL.cream);                            // white band behind nose
+  ell(g, 0, 5.6, 1.9, 1.3, 0, COL.nose);                             // big black nose
+  if (P.tongue > 0.08) ell(g, 0.3, 7.4 + P.tongue * 0.8, 0.9 + P.tongue * 0.4, 0.7 + P.tongue * 0.7, 0, COL.tongue);
+}
+
 // Fixed spot pattern along the back (like a spring fawn).
 const SPOTS = (() => {
   const r = mulberry32(7), out = [];
-  for (let x = 25; x <= 51; x += 2.6) out.push([x + r() * 0.8, 35.3 + r() * 1.2]);
-  for (let x = 26.5; x <= 49; x += 3.1) out.push([x + r() * 1.2, 38.3 + r() * 1.3]);
-  for (let x = 28; x <= 46; x += 4.3) out.push([x + r() * 1.5, 41.4 + r() * 1.5]);
-  for (let i = 0; i < 5; i++) out.push([30 + r() * 16, 43.5 + r() * 1.5]);
+  for (let x = 27; x <= 52; x += 2.3) out.push([x + r() * 0.5, 35.4 + r() * 0.6]);   // row by the spine
+  for (let x = 28; x <= 50; x += 2.7) out.push([x + r() * 0.8, 37.9 + r() * 0.8]);   // second row
+  for (let i = 0; i < 12; i++) out.push([28 + r() * 21, 40 + r() * 4]);               // flank scatter
   return out;
 })();
 
 function bodyPath(g, dy) {
   const q = (cx, cy, x, y) => g.quadraticCurveTo(cx, cy + dy, x, y + dy);
   g.beginPath();
-  g.moveTo(24, 36.5 + dy);          // tail root
-  q(26, 33.2, 30, 33.3);            // bony, slightly pointed croup
-  q(36, 34.2, 41, 35.2);            // gentle sway in the back
-  q(47, 35.3, 51, 34.3);            // withers
-  q(56.5, 34.8, 56.8, 39.5);        // point of shoulder
-  q(57, 46.5, 51.5, 48.6);          // deep little brisket
-  q(46.5, 49, 42, 46.8);            // belly
-  q(37, 44.2, 33, 44.8);            // skinny tucked-up flank
-  q(26.5, 45.6, 24.4, 41.5);        // back of the thigh
-  q(23.3, 38.6, 24, 36.5);
+  g.moveTo(24.5, 39.5 + dy);        // tail root, set low
+  q(24.6, 34.4, 30, 33.3);          // rump rounds down into the tail
+  q(36, 32.2, 42, 33.3);            // gently arched loin
+  q(48, 34.3, 52, 34.3);            // withers
+  q(57.6, 34.8, 57.9, 40.5);        // point of shoulder
+  q(58.3, 48.6, 51.5, 50.9);        // deep chest
+  q(46, 51.7, 40.5, 49.8);          // belly
+  q(35.5, 47.7, 32, 48);            // flank
+  q(25.3, 48.4, 23.9, 43.6);        // back of the thigh
+  q(23.5, 41.2, 24.5, 39.5);
   g.closePath();
 }
 
+const BODY_K = 0.95;   // torso scale — small body on long legs, like a young fawn
 function drawStanding(g, P) {
-  const dy = -P.bob + P.crouch * 4 - 3;   // -3: taller, leggier fawn
-  frontLeg(g, 48, 44.5 + dy, P.legs[0], COL.coatDark);   // far legs first
-  hindLeg(g, 29.5, 40 + dy, P.legs[2], COL.coatDark);
-  tail(g, 24.5, 35.5 + dy, P.tailRaise, P.tailWag);
+  const K = BODY_K, dy = -P.bob + P.crouch * 4 - 6.6;
+  const B = (x, y) => [41 + (x - 41) * K, 41 + (y - 41) * K + dy];   // body-space → sprite
+
+  g.save();                                     // whole-body pitch (gallop rocking, leaps)
+  g.translate(42, 46 + dy); g.rotate(P.pitch); g.translate(-42, -46 - dy);
+
+  frontLeg(g, ...B(48, 44.5), P.legs[0], COL.coatDark);   // far legs first
+  hindLeg(g, ...B(29.5, 40), P.legs[2], COL.coatDark);
+  tail(g, ...B(25, 38.2), P.tailRaise, P.tailWag);
 
   g.save();
-  bodyPath(g, dy); g.fillStyle = COL.coat; g.fill(); g.clip();
-  ell(g, 40, 35.3 + dy, 17, 3.6, 0, COL.coatDeep);    // dorsal band
-  ell(g, 45, 48.4 + dy, 8.5, 2.3, 0, COL.cream);      // belly
-  ell(g, 24.2, 40.5 + dy, 1.8, 4, 0, COL.cream);      // white rump
+  g.translate(41, 41 + dy); g.scale(K, K); g.translate(-41, -41);
+  bodyPath(g, 0); g.fillStyle = COL.coat; g.fill(); g.clip();
+  ell(g, 40, 34.4, 17, 3.3, 0, COL.coatDeep);    // dorsal band
+  ell(g, 45, 50.6, 9.5, 2.6, 0, COL.cream);      // belly
+  ell(g, 24.4, 42, 1.8, 4, 0, COL.cream);        // white rump
   g.fillStyle = COL.white;
-  for (const [x, y] of SPOTS) g.fillRect(x, y + dy, 1.15, 1.15);
+  for (const [x, y] of SPOTS) g.fillRect(x, y, 1.4, 1.4);
   g.restore();
 
-  hindLeg(g, 31.5, 41 + dy, P.legs[3], COL.coat);        // near legs over body
-  frontLeg(g, 50.5, 45.5 + dy, P.legs[1], COL.coat);
+  hindLeg(g, ...B(31.5, 41), P.legs[3], COL.coat);        // near legs over body
+  frontLeg(g, ...B(50.5, 45.5), P.legs[1], COL.coat);
 
   // Neck + head. Head angle is derived from the neck angle so it always follows it.
-  const bx = 52.5, by = 37 + dy, n = P.neck, L = P.neckLen;
+  const [bx, by] = B(52.5, 37), n = P.neck, L = P.neckLen;
   const ux = Math.cos(n), uy = Math.sin(n), px = -uy, py = ux;
   const tx = bx + ux * L, ty = by + uy * L;
-  seg(g, bx, by, tx, ty, 6.4, 4.2, COL.coat);
-  ell(g, tx - ux * 2.4 + px * 1.5, ty - uy * 2.4 + py * 1.5, 1.8, 1.2, n, COL.cream); // throat patch
-  g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt);
-  head(g, P);
+  seg(g, bx, by, tx, ty, 7.6, 4.4, COL.coat);
+  if (P.back) {
+    g.save(); g.translate(tx - 0.5, ty); g.scale(-1, 1); g.rotate(P.lookAng + P.tilt * 0.3);
+    head(g, P);
+    g.restore();
+  } else if (P.stare) {
+    ell(g, tx + 0.3, ty + 2.2, 1.6, 1.4, 0, COL.cream);     // white throat patch, seen head-on
+    g.save(); g.translate(tx + 0.8, ty - 2.5); g.rotate(P.tilt * 0.5); g.scale(1.3, 1.3); headFront(g, P); g.restore();
+  } else {
+    ell(g, tx - ux * 3.5 + px * 1.9, ty - uy * 3.5 + py * 1.9, 3.2, 1.1, n, COL.cream); // pale throat
+    g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt);
+    head(g, P);
+    g.restore();
+  }
   g.restore();
 }
 
@@ -318,11 +369,33 @@ function drawCurled(g, P, t) {
   g.fillStyle = COL.hoof; g.fillRect(46, 63.7, 2.6, 2.2);
   seg(g, 55, 63, 63, 64.6, 2.6, 2, COL.coat);                            // folded front leg
   g.fillStyle = COL.hoof; g.fillRect(63, 63.5, 2.6, 2.2);
-  // neck curving forward and chin resting on the ground, eyes closed, ears laid back
-  seg(g, 55, 55, 61, 57.5 + b * 0.3, 7, 6, COL.coat);
-  g.save(); g.translate(62, 57.5 + b * 0.3); g.rotate(0.28);
-  head(g, { ...P, earPerk: 0, eye: 0, chew: 0, earFlick: 0, eyeWide: 0, tongue: 0 });
-  g.restore();
+  const sleepy = { ...P, earPerk: 0, eye: 0, chew: 0, earFlick: 0, eyeWide: 0, tongue: 0 };
+  if (P.awake) {
+    // lying down but alert: neck up, head watching (follows the cursor like standing)
+    const tx = 58.5, ty = 43 + b * 0.2;
+    seg(g, 55, 54.5, tx, ty, 8, 5, COL.coat);
+    if (P.back) {
+      g.save(); g.translate(tx - 0.5, ty); g.scale(-1, 1); g.rotate(P.lookAng); head(g, P); g.restore();
+    } else if (P.stare) {
+      ell(g, tx + 0.3, ty + 2.4, 1.7, 1.5, 0, COL.cream);
+      g.save(); g.translate(tx + 0.8, ty - 2.2); g.rotate(P.tilt * 0.5); g.scale(1.3, 1.3); headFront(g, P); g.restore();
+    } else {
+      const n = clamp(P.neck, -1.6, -0.6);
+      g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt); head(g, P); g.restore();
+    }
+  } else if (P.tuck) {
+    // head swung back over the shoulder, nose tucked into her side by the hind leg
+    seg(g, 57, 56, 54, 50.5 + b * 0.3, 7.5, 6, COL.coat);
+    g.save(); g.translate(53, 50.8 + b * 0.3); g.scale(-1, 1); g.rotate(0.32);
+    head(g, sleepy);
+    g.restore();
+  } else {
+    // neck curving forward and chin resting on the ground, eyes closed, ears laid back
+    seg(g, 55, 55, 61, 57.5 + b * 0.3, 7, 6, COL.coat);
+    g.save(); g.translate(62, 57.5 + b * 0.3); g.rotate(0.28);
+    head(g, sleepy);
+    g.restore();
+  }
 }
 
 // Snap to palette, threshold alpha, add a 1px dark outline → real pixel art.
@@ -366,7 +439,9 @@ function pixelize() {
 
 function renderDeer(P, t) {
   dg.clearRect(0, 0, DW, DH);
+  dg.save(); dg.translate(0, PAD);
   if (P.lie >= 1) drawCurled(dg, P, t); else drawStanding(dg, P);
+  dg.restore();
   pixelize();
 }
 
@@ -462,7 +537,6 @@ canvas.addEventListener('mousedown', e => {
     const b = bounds();
     deer.target = { x: clamp(lx, b.x0, b.x1), y: clamp(ly, b.y0, b.y1) };
     deer.targetRun = e.shiftKey;
-    deer.flee = false;
     setState(e.shiftKey ? 'run' : 'walk');
   }
 });
@@ -475,7 +549,7 @@ addEventListener('keydown', e => {
   keys[k] = true; keys.shift = e.shiftKey;
   if (e.repeat) return;
   if (MOVE_KEYS.includes(k) && auto) { setAuto(false); toast('Manual mode · press T for auto'); }
-  const map = { ' ': 'jump', e: 'graze', c: 'chew', v: 'chewlook', l: 'look', z: 'sleep', p: 'play', x: 'scare' };
+  const map = { ' ': 'jump', e: 'graze', c: 'chew', v: 'chewlook', l: 'look', g: 'stare', z: 'sleep', r: 'rest', p: 'play' };
   if (k === 't') setAuto(!auto);
   else if (map[k]) doAction(map[k], true);
 });
@@ -484,14 +558,13 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 // ─────────────────────────── deer brain ───────────────────────────
 const WALK = 20, RUN = 72, JUMP_H = 16, JUMP_DUR = 0.62;
-const SCARE_DIST = 58, SCARE_SPEED = 1100;   // logical px, screen px/s
 const CURIOUS_DIST = 120, CURIOUS_SPEED = 380;
 const PET_DIST = 20, PET_SPEED = 170, HOLD = 0.45;
 
 const deer = {
   x: 0, y: 0, z: 0, face: 1, state: 'stand', st: 0, phase: 0, idleDur: 3, since: 0,
   target: null, targetRun: false, afterArrive: null, flower: null,
-  flee: false, fleeV: { x: 1, y: 0 }, fleeT: 1.5, jumpVX: 0, jumpVY: 0,
+  jumpVX: 0, jumpVY: 0,
   playDur: 5, playV: { x: 0, y: 0 }, hopIdx: -1, sleepDur: 30, lie: 0, trust: 0, hold: 0,
   look: null, sm: null, fx: 0,
 };
@@ -499,19 +572,20 @@ let auto = true;
 
 const LABELS = {
   stand: 'standing', look: 'looking around', walk: 'walking', run: 'running', jump: 'jumping',
-  sleep: 'sleeping', graze: 'eating grass', chew: 'chewing', chewlook: 'chew + look',
-  startled: 'startled!', curious: 'curious', fed: 'eating from hand', pet: 'being petted', play: 'playing',
+  sleep: 'sleeping', rest: 'resting', graze: 'eating grass', chew: 'chewing', chewlook: 'chew + look',
+  stare: 'staring at you', curious: 'curious', fed: 'eating from hand', pet: 'being petted', play: 'playing',
 };
 
 function setState(s) {
   deer.state = s; deer.st = 0;
+  if (s === 'sleep') deer.tuck = Math.random() < 0.5;   // sometimes tucks her head in
   if (s !== 'curious' && s !== 'fed' && s !== 'pet') deer.hold = 0;
 }
 
-function bodyCenter() { return { x: deer.x + deer.face * 4, y: deer.y - 26 - deer.z }; }
+function bodyCenter() { return { x: deer.x + deer.face * 4, y: deer.y - 31 - deer.z }; }
 function headPos() {
   const low = deer.state === 'graze' ? 26 : deer.lie > 0.5 ? 12 : 0;
-  return { x: deer.x + deer.face * 20, y: deer.y - 42 + low - deer.z };
+  return { x: deer.x + deer.face * 21, y: deer.y - 47 + low - deer.z };
 }
 function petDistance(x, y) {
   const h = headPos(), b = bodyCenter();
@@ -524,23 +598,8 @@ function stepToward(tx, ty, speed, dt) {
   const k = Math.min(1, speed * dt / d);
   deer.x += dx * k; deer.y += dy * k;
   if (Math.abs(dx) > 0.6) deer.face = sign(dx);
-  deer.phase = (deer.phase + speed * dt / (speed > 40 ? 52 : 24)) % 1;
+  deer.phase = (deer.phase + speed * dt / (speed > 40 ? 40 : 24)) % 1;
   return false;
-}
-
-function startle(fromX, fromY) {
-  if (deer.state === 'sleep') deer.lie = 0.55;
-  setState('startled');
-  deer.flee = false;
-  deer.trust = Math.max(0, deer.trust - 0.15);
-  let vx = deer.x - fromX; if (Math.abs(vx) < 4) vx = Math.random() < 0.5 ? -1 : 1;
-  const vy = clamp((deer.y - fromY) / 50, -0.7, 0.7);
-  const n = Math.hypot(sign(vx), vy);
-  deer.fleeV = { x: sign(vx) / n, y: vy / n };
-  deer.face = sign(vx);
-  deer.fleeT = 1.2 + Math.random() * 0.7;
-  deer.target = null;
-  const h = headPos(); spawn('bang', h.x, h.y - 14);
 }
 
 function startJump() {
@@ -555,13 +614,13 @@ function startJump() {
 }
 
 function startPlay() {
-  setState('play'); deer.playDur = rand(4, 6.5); deer.hopIdx = -1; deer.target = null;
+  setState('play'); deer.playDur = rand(4, 6.5); deer.hopIdx = -1; deer.hopT = 0; deer.dart = false; deer.target = null;
 }
 
 function walkTo(x, y, run, after) {
   const b = bounds();
   deer.target = { x: clamp(x, b.x0, b.x1), y: clamp(y, b.y0, b.y1) };
-  deer.targetRun = run; deer.afterArrive = after || null; deer.flee = false;
+  deer.targetRun = run; deer.afterArrive = after || null;
   setState(run ? 'run' : 'walk');
 }
 
@@ -587,11 +646,13 @@ function pickNext() {
   deer.idleDur = rand(2.5, 5);
   const b = bounds();
   if (deer.since > 50 && Math.random() < 0.35) { setState('sleep'); deer.sleepDur = rand(18, 35); return; }
+  if (deer.since > 20 && Math.random() < 0.12) { setState('rest'); deer.idleDur = rand(8, 15); return; }
   const r = Math.random();
   if (r < 0.22) walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), false);
   else if (r < 0.46) goEatFlower(false);
   else if (r < 0.56) { setState('graze'); deer.flower = null; deer.idleDur = rand(4, 7); }
-  else if (r < 0.68) setState('look');
+  else if (r < 0.61) setState('look');
+  else if (r < 0.68) { setState('stare'); deer.idleDur = rand(2, 3.5); }
   else if (r < 0.78) startPlay();
   else if (r < 0.84) startJump();
   else if (r < 0.9) walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), true);
@@ -600,7 +661,7 @@ function pickNext() {
 
 function doAction(a, fromKey) {
   const b = bounds();
-  if (deer.state === 'sleep' && a !== 'sleep' && a !== 'scare') deer.lie = Math.min(deer.lie, 0.59);
+  if (deer.state === 'sleep' && a !== 'sleep' && a !== 'rest') deer.lie = Math.min(deer.lie, 0.59);
   switch (a) {
     case 'walk': walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), false); break;
     case 'run': walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), true); break;
@@ -615,11 +676,10 @@ function doAction(a, fromKey) {
       else { setState('sleep'); deer.sleepDur = rand(20, 35); deer.target = null; }
       break;
     case 'play': startPlay(); break;
-    case 'scare': startle(mouse.inside ? mouse.x : deer.x + (Math.random() < 0.5 ? -40 : 40), mouse.inside ? mouse.y : deer.y); break;
     case 'respawn': for (const f of flowers) f.eaten = false; toast('Flowers regrown 🌼'); break;
     default:
       if (deer.state === a && fromKey) setState('stand');
-      else { setState(a); deer.idleDur = rand(3, 5); deer.target = null; }
+      else { setState(a); deer.idleDur = a === 'rest' ? rand(8, 14) : rand(3, 5); deer.target = null; }
   }
 }
 
@@ -645,14 +705,8 @@ function cursorReact(dt) {
   const b = bodyCenter();
   const dBody = Math.hypot(mouse.x - b.x, mouse.y - b.y);
   const dPet = petDistance(mouse.x, mouse.y);
-  const scareSpeed = SCARE_SPEED * (1 + deer.trust * 0.8);
-  const scareDist = SCARE_DIST * (1 - deer.trust * 0.4);
 
-  if (auto && mouse.speed > scareSpeed && dBody < scareDist &&
-      !(s === 'startled' || s === 'jump' || (s === 'run' && deer.flee))) {
-    startle(mouse.x, mouse.y); return true;
-  }
-  if (s === 'startled' || (s === 'run' && deer.flee) || s === 'jump') return false;
+  if (s === 'jump') return false;
 
   const calm = mouse.speed < PET_SPEED;
   const inPet = dPet < PET_DIST;
@@ -664,7 +718,7 @@ function cursorReact(dt) {
   }
 
   if (engaged) {
-    if (Math.abs(mouse.x - deer.x) > 10) deer.face = sign(mouse.x - deer.x);
+    if (s === 'fed' && Math.abs(mouse.x - deer.x) > 10) deer.face = sign(mouse.x - deer.x);
     if (inPet && calm) {
       deer.hold += dt;
       if (mouse.down) { if (s !== 'fed') setState('fed'); deer.trust = Math.min(1, deer.trust + dt * 0.12); }
@@ -679,47 +733,38 @@ function cursorReact(dt) {
     return true;
   }
 
-  const idle = ['stand', 'look', 'walk', 'graze', 'chew', 'chewlook', 'play'].includes(s);
+  const idle = ['stand', 'look', 'stare', 'walk', 'graze', 'chew', 'chewlook', 'play'].includes(s);
   if (auto && idle && inCurious) { deer.target = null; setState('curious'); return true; }
-  if (!auto && inPet && calm && ['stand', 'look', 'graze', 'chew', 'chewlook'].includes(s)) { setState('curious'); return true; }
+  if (!auto && inPet && calm && ['stand', 'look', 'stare', 'graze', 'chew', 'chewlook'].includes(s)) { setState('curious'); return true; }
   return false;
 }
 
-function fleeStep(dt) {
-  const b = bounds();
-  deer.x += deer.fleeV.x * RUN * 1.15 * dt;
-  deer.y += deer.fleeV.y * RUN * 0.6 * dt;
-  if (deer.x < b.x0 || deer.x > b.x1) { deer.fleeV.x *= -1; deer.x = clamp(deer.x, b.x0, b.x1); }
-  if (deer.y < b.y0 || deer.y > b.y1) { deer.fleeV.y *= -1; deer.y = clamp(deer.y, b.y0, b.y1); }
-  deer.face = sign(deer.fleeV.x);
-  deer.phase = (deer.phase + RUN * 1.15 * dt / 52) % 1;
-  if (deer.st > deer.fleeT) {
-    const b2 = bodyCenter();
-    const far = !mouse.inside || Math.hypot(mouse.x - b2.x, mouse.y - b2.y) > CURIOUS_DIST;
-    if (far || mouse.speed < SCARE_SPEED * 0.4 || !auto) {
-      deer.flee = false;
-      setState(auto ? 'look' : 'stand'); deer.idleDur = rand(2.5, 4);
-      if (mouse.inside) deer.face = sign(mouse.x - deer.x);   // turn to eye the threat
-    }
-  }
-}
-
 function playStep(dt) {
-  const hopLen = 0.42;
-  const idx = Math.floor(deer.st / hopLen);
-  if (idx !== deer.hopIdx) {
-    deer.hopIdx = idx;
-    const bf = butterflies[0];
-    let ang = Math.random() < 0.4 && bf ? Math.atan2(bf.y - deer.y, bf.x - deer.x) : rand(0, TAU);
-    deer.playV = { x: Math.cos(ang) * 30, y: Math.sin(ang) * 14 };
+  deer.hopT += dt;
+  if (deer.hopIdx < 0 || deer.hopT >= deer.hopLen) {
+    if (deer.hopIdx >= 0 && deer.st > deer.playDur) { deer.z = 0; deer.dart = false; setState('stand'); deer.idleDur = rand(1.5, 3); return; }
+    deer.hopIdx++; deer.hopT = 0;
+    const prev = deer.playV;
+    // every so often she scatters: a fast, long leap snapping back the other way
+    deer.dart = deer.hopIdx > 0 && Math.abs(prev.x) > 5 && Math.random() < 0.33;
+    if (deer.dart) {
+      deer.hopLen = 0.36;
+      deer.playV = { x: -sign(prev.x) * rand(66, 84), y: rand(-12, 12) };
+      spawn('dust', deer.x - 4, deer.y); spawn('dust', deer.x + 4, deer.y);
+    } else {
+      deer.hopLen = rand(0.36, 0.48);
+      const bf = butterflies[0];
+      const ang = Math.random() < 0.4 && bf ? Math.atan2(bf.y - deer.y, bf.x - deer.x) : rand(0, TAU);
+      deer.playV = { x: Math.cos(ang) * 30, y: Math.sin(ang) * 14 };
+    }
     if (Math.abs(deer.playV.x) > 3) deer.face = sign(deer.playV.x);
   }
-  const p = (deer.st % hopLen) / hopLen;
-  deer.z = Math.sin(p * Math.PI) * 7;
+  const p = deer.hopT / deer.hopLen;
+  deer.z = Math.sin(p * Math.PI) * (deer.dart ? 10 : 7);
   const b = bounds();
   deer.x = clamp(deer.x + deer.playV.x * dt, b.x0, b.x1);
   deer.y = clamp(deer.y + deer.playV.y * dt, b.y0, b.y1);
-  if (deer.st > deer.playDur && p < 0.1) { deer.z = 0; setState('stand'); deer.idleDur = rand(1.5, 3); }
+  if (deer.x <= b.x0 || deer.x >= b.x1) deer.playV.x *= -1;
 }
 
 function jumpStep(dt) {
@@ -745,11 +790,12 @@ function update(dt, t) {
   // cursor tracking (speed in real screen px/s so thresholds don't depend on SCALE)
   const mdx = mouse.cx - mouse.lcx, mdy = mouse.cy - mouse.lcy;
   mouse.speed = mouse.speed * 0.65 + (Math.hypot(mdx, mdy) / Math.max(dt, 1e-3)) * 0.35;
+  mouse.still = Math.hypot(mdx, mdy) > 0.5 ? 0 : (mouse.still || 0) + dt;
   mouse.lcx = mouse.cx; mouse.lcy = mouse.cy;
   mouse.x = mouse.cx / SCALE; mouse.y = mouse.cy / SCALE;
 
   // lying down / getting up
-  const lieTarget = deer.state === 'sleep' ? 1 : 0;
+  const lieTarget = deer.state === 'sleep' || deer.state === 'rest' ? 1 : 0;
   deer.lie = clamp(deer.lie + Math.sign(lieTarget - deer.lie) * dt / 1.1, 0, 1);
   if (deer.state !== 'jump' && deer.state !== 'play') deer.z = 0;
 
@@ -757,6 +803,9 @@ function update(dt, t) {
   if (s === 'curious' || s === 'fed' || s === 'pet') deer.since = 0;
 
   if (auto) autoStep(dt); else manualStep(dt);
+  updateHeadMode(dt);
+  // airborne phase of each gallop stride
+  if (deer.state === 'run') deer.z = Math.max(0, Math.sin(deer.phase * TAU)) * 5.5;
 
   // flowers regrow
   for (const f of flowers) if (f.eaten && (f.regrow -= dt) <= 0) f.eaten = false;
@@ -769,11 +818,9 @@ function autoStep(dt) {
   const s = deer.state;
   switch (s) {
     case 'curious': case 'fed': case 'pet': break;
-    case 'startled': if (deer.st > 0.3) { deer.flee = true; setState('run'); } break;
     case 'jump': jumpStep(dt); break;
     case 'play': playStep(dt); break;
     case 'walk': case 'run':
-      if (deer.flee) { fleeStep(dt); break; }
       if (!deer.target || stepToward(deer.target.x, deer.target.y, s === 'run' ? RUN : WALK, dt)) {
         deer.target = null;
         if (deer.afterArrive === 'graze') {
@@ -790,7 +837,13 @@ function autoStep(dt) {
       if (deer.st > deer.idleDur) { if (Math.random() < 0.55) { setState('chewlook'); deer.idleDur = rand(2.5, 4.5); } else pickNext(); }
       break;
     case 'sleep':
-      if (deer.st > deer.sleepDur) { setState('stand'); deer.since = 0; deer.idleDur = rand(2, 3); }
+      if (deer.st > deer.sleepDur) {
+        deer.since = 0;
+        if (Math.random() < 0.5) { setState('rest'); deer.idleDur = rand(8, 14); } else { setState('stand'); deer.idleDur = rand(2, 3); }
+      }
+      break;
+    case 'rest':
+      if (deer.st > deer.idleDur) { if (Math.random() < 0.25) { setState('sleep'); deer.sleepDur = rand(18, 30); } else { setState('stand'); deer.idleDur = rand(2, 3); } }
       break;
     default:
       if (deer.st > deer.idleDur) pickNext();
@@ -800,8 +853,6 @@ function autoStep(dt) {
 function manualStep(dt) {
   const s = deer.state;
   if (s === 'jump') { jumpStep(dt); return; }
-  if (s === 'startled') { if (deer.st > 0.3) { deer.flee = true; setState('run'); } return; }
-  if (s === 'run' && deer.flee) { fleeStep(dt); return; }
 
   const dir = keyDir();
   if (dir.x || dir.y) {
@@ -813,7 +864,7 @@ function manualStep(dt) {
     deer.x = clamp(deer.x + dir.x / n * sp * dt, b.x0, b.x1);
     deer.y = clamp(deer.y + dir.y / n * sp * 0.6 * dt, b.y0, b.y1);
     if (dir.x) deer.face = dir.x;
-    deer.phase = (deer.phase + sp * dt / (running ? 52 : 24)) % 1;
+    deer.phase = (deer.phase + sp * dt / (running ? 40 : 24)) % 1;
     return;
   }
   if (deer.target) {
@@ -840,8 +891,8 @@ function eatFlowerIfAny() {
 // ─────────────────────────── poses ───────────────────────────
 function basePose() {
   return {
-    bob: 0, crouch: 0, neck: -1.05, neckLen: 13, tilt: 0, earPerk: 0.75, earFlick: 0,
-    eye: 1, eyeWide: 0, chew: 0, tongue: 0, tailRaise: 0.05, tailWag: 0, lie: 0,
+    bob: 0, crouch: 0, neck: -1.05, neckLen: 15, tilt: 0, earPerk: 0.75, earFlick: 0,
+    eye: 1, eyeWide: 0, chew: 0, tongue: 0, pitch: 0, stare: 0, back: 0, lookAng: 0, tuck: false, awake: 0, tailRaise: 0.05, tailWag: 0, lie: 0,
     legs: [{ s: 0.04, f: 0 }, { s: 0.02, f: 0 }, { s: 0, f: 0 }, { s: -0.02, f: 0 }],
   };
 }
@@ -856,10 +907,28 @@ function gait(P, phase, A, F, offs) {
   }
 }
 
+const TRACK_STATES = ['stand', 'look', 'chew', 'chewlook', 'stare', 'curious', 'pet', 'rest'];
+function headTracking() {
+  return mouse.inside && mouse.still < 4 && TRACK_STATES.includes(deer.state) && (deer.lie === 0 || deer.state === 'rest');
+}
+
+// Which way her head points relative to her body, with hysteresis so it doesn't flicker.
+function updateHeadMode(dt) {
+  if (!headTracking()) { deer.headMode = 'fwd'; deer.behindT = 0; return; }
+  const dx = aimNeck(mouse.x, mouse.y).dx;
+  if (dx > 14) deer.headMode = 'fwd';
+  else if (dx < -14) deer.headMode = 'back';
+  else if (Math.abs(dx) < 7) deer.headMode = 'front';
+  // only turn the whole body if you've been hanging out behind her for a while
+  deer.behindT = deer.headMode === 'back' ? deer.behindT + dt : 0;
+  const patience = deer.state === 'curious' || deer.state === 'pet' ? 2.5 : 6;
+  if (auto && deer.state !== 'rest' && deer.behindT > patience) { deer.face = -deer.face; deer.behindT = 0; deer.headMode = 'fwd'; }
+}
+
 function aimNeck(tx, ty) {
-  const bx = deer.x + deer.face * (52.5 - ANCHOR_X), by = deer.y - (GROUND - 34) - deer.z;
+  const bx = deer.x + deer.face * (50.7 - ANCHOR_X), by = deer.y - (GROUND - PAD - 31) - deer.z;
   const dx = (tx - bx) * deer.face, dy = ty - by;
-  return { n: clamp(Math.atan2(dy, Math.max(3, dx)) - 0.25, -1.5, 1.3), d: Math.hypot(dx, dy) };
+  return { n: clamp(Math.atan2(dy, Math.max(3, dx)) - 0.25, -1.5, 1.3), d: Math.hypot(dx, dy), dx, dy };
 }
 
 function poseFor(t) {
@@ -871,7 +940,11 @@ function poseFor(t) {
   switch (s) {
     case 'stand':
       P.bob = Math.sin(t * 1.8) * 0.35; P.tailWag = Math.sin(t * 1.3) * 0.15; break;
+    case 'stare':
+      P.stare = 1; P.neck = -1.4; P.earPerk = 1; P.bob = Math.sin(t * 1.8) * 0.25;
+      P.tilt = Math.sin(t * 0.5) * 0.12; P.tailWag = Math.sin(t * 1.3) * 0.1; break;
     case 'look':
+      if (st > 1.4 && st < 3.2) P.stare = 1;          // glances right at you mid look-around
       P.neck = -1.15 + Math.sin(t * 0.9) * 0.28; P.tilt = Math.sin(t * 0.6) * 0.3; P.earPerk = 0.95;
       P.bob = Math.sin(t * 1.8) * 0.3; break;
     case 'walk':
@@ -879,9 +952,16 @@ function poseFor(t) {
       P.bob = Math.abs(Math.sin(deer.phase * TAU * 2)) * 0.5;
       P.neck = -1.0 + Math.sin(deer.phase * TAU * 2) * 0.06; P.tailWag = Math.sin(t * 3) * 0.15; break;
     case 'run':
-      gait(P, deer.phase, 0.8, 1.1, [0, 0.1, 0.55, 0.65]);
-      P.bob = Math.sin(deer.phase * TAU) * 1.5; P.neck = -0.75 + Math.sin(deer.phase * TAU) * 0.1;
-      P.earPerk = 0.3; P.tailRaise = deer.flee ? 1 : 0.25; P.eyeWide = deer.flee ? 0.8 : 0; break;
+      // Bounding gallop. phase .25 = fully stretched out & airborne (front reaching, hind
+      // pushed back straight); phase .75 = gathered (hind legs swing up under the chest).
+      // Legs fold while swinging forward and are straight while they're on the ground.
+      for (let i = 0; i < 4; i++) {
+        const hind = i >= 2, th = (deer.phase + [0, 0.06, 0.5, 0.57][i]) * TAU;
+        P.legs[i] = { s: (hind ? 1.0 : 0.85) * Math.sin(th), f: (hind ? 1.15 : 1.3) * Math.max(0, Math.cos(th)) ** 0.8 };
+      }
+      P.pitch = Math.sin((deer.phase - 0.15) * TAU) * 0.1;   // lands on the front, pushes off the back
+      P.bob = 0; P.neck = -0.8 + Math.sin(deer.phase * TAU + 1) * 0.14;
+      P.earPerk = 0.3; P.tailRaise = 0.7; P.tailWag = Math.sin(t * 12) * 0.3; break;   // happy zoomies
     case 'jump': {
       const p = st / JUMP_DUR;
       if (p < 0.15) { P.crouch = 0.6; P.legs = P.legs.map(() => ({ s: 0, f: 0.55 })); }
@@ -893,14 +973,23 @@ function poseFor(t) {
       P.neck = -1.25; P.tailRaise = 0.45; P.earPerk = 0.6; break;
     }
     case 'play':
-      if (deer.z > 1) P.legs = P.legs.map((L, i) => ({ s: i < 2 ? 0.12 : -0.08, f: 0.15 }));
+      if (deer.dart && deer.z > 1) {             // scatter leap: stretched out flat
+        P.legs = [{ s: 0.75, f: 0.35 }, { s: 0.85, f: 0.25 }, { s: -0.8, f: 0.05 }, { s: -0.9, f: 0 }];
+        P.pitch = -0.12 + (deer.hopT / deer.hopLen) * 0.22; P.tailRaise = 0.9;
+      } else if (deer.z > 1) P.legs = P.legs.map((L, i) => ({ s: i < 2 ? 0.12 : -0.08, f: 0.15 }));
       else { P.crouch = 0.3; P.legs = P.legs.map(() => ({ s: 0, f: 0.35 })); }
-      P.neck = -1.25 + Math.sin(t * 9) * 0.22; P.tailRaise = 0.55; P.tailWag = Math.sin(t * 18);
+      P.neck = -1.25 + Math.sin(t * 9) * 0.22; P.tailWag = Math.sin(t * 18);
+      if (!deer.dart) P.tailRaise = 0.55;
+      P.tongue = deer.z > 1 ? 0.75 + Math.sin(t * 14) * 0.2 : 0.35;   // silly tongue out while hopping
       P.earPerk = 0.9; break;
     case 'sleep':
-      P.neck = 0.2; P.earPerk = 0.2; P.eye = deer.lie > 0.3 ? 0 : 1; break;
+      P.neck = 0.2; P.earPerk = 0.2; P.eye = deer.lie > 0.3 ? 0 : 1; P.tuck = !!deer.tuck; break;
+    case 'rest':
+      P.awake = 1; P.neck = -1.2 + Math.sin(t * 0.5) * 0.15; P.earPerk = 0.85; P.tilt = Math.sin(t * 0.4) * 0.12;
+      if (deer.st % 9 > 6.5) P.stare = 1;          // glances over at you now and then
+      break;
     case 'graze':
-      P.neck = 1.2; P.neckLen = 19; P.crouch = 0.12; P.chew = Math.sin(t * 9) * 0.5 + 0.5;
+      P.neck = 1.25; P.neckLen = 22; P.crouch = 0.12; P.chew = Math.sin(t * 9) * 0.5 + 0.5;
       P.tilt = -0.3 + Math.sin(t * 0.7) * 0.08;   // muzzle angled forward into the grass
       P.legs[0].s = 0.2; P.legs[1].s = -0.04; P.earPerk = 0.55; P.tailWag = Math.sin(t * 1.1) * 0.2; break;
     case 'chew':
@@ -908,9 +997,6 @@ function poseFor(t) {
     case 'chewlook':
       P.neck = -1.05 + Math.sin(t * 0.8) * 0.25; P.tilt = Math.sin(t * 0.55) * 0.28;
       P.chew = Math.sin(t * 6) * 0.5 + 0.5; P.earPerk = 0.9; break;
-    case 'startled':
-      P.neck = -1.45; P.earPerk = 1; P.eyeWide = 1; P.tailRaise = 1; P.crouch = 0.25;
-      P.legs = P.legs.map(L => ({ s: L.s, f: 0.25 })); P.earFlick = 0; break;
     case 'curious': {
       const a = aimNeck(mouse.x, mouse.y);
       P.neck = lerp(-1.2, a.n, 0.75); P.earPerk = 1; P.tilt = Math.sin(t * 1.3) * 0.15;
@@ -918,7 +1004,7 @@ function poseFor(t) {
     }
     case 'fed': {
       const a = aimNeck(mouse.x, mouse.y);
-      P.neck = a.n; P.neckLen = clamp(a.d - 11, 12, 19); P.chew = Math.sin(t * 12) * 0.5 + 0.5;
+      P.neck = a.n; P.neckLen = clamp(a.d - 11, 13, 22); P.chew = Math.sin(t * 12) * 0.5 + 0.5;
       P.tongue = Math.max(0, Math.sin(t * 7)); // licking your hand
       P.eye = 0.8; P.earPerk = 0.8; P.tailRaise = 0.3; P.tailWag = Math.sin(t * 9) * 0.7; break;
     }
@@ -936,13 +1022,27 @@ function poseFor(t) {
     if (b) { P.neck = lerp(P.neck, clamp(aimNeck(b.x, b.y - b.alt).n, -1.5, -0.55), 0.7); P.earPerk = 1; }
   }
 
+  // follow the cursor with her head while she's awake and standing in place
+  if (headTracking()) {
+    const a = aimNeck(mouse.x, mouse.y);
+    const m = deer.headMode;
+    if (m === 'fwd') { P.stare = 0; P.neck = clamp(a.n, -1.5, 0.45); P.tilt *= 0.3; }
+    else if (m === 'front') { P.stare = 1; P.neck = -1.4; P.tilt = clamp(a.dy / 120, -0.25, 0.25); }
+    else {
+      // swivel the head back over her shoulder, body stays put
+      P.stare = 0; P.back = 1; P.neck = -1.85;
+      P.lookAng = clamp(Math.atan2(a.dy + 13, Math.max(4, -a.dx)), -0.8, 0.5);
+    }
+    P.earPerk = Math.max(P.earPerk, 0.85);
+  }
+
   // lying down / getting up blends into the curled sleeping sprite
   if (deer.lie > 0) {
     if (deer.lie >= 0.6) P.lie = 1;
     else {
       const k = deer.lie / 0.6;
       P.crouch += k * 1.4; P.legs = P.legs.map(L => ({ s: L.s * (1 - k), f: L.f + k * 1.3 }));
-      P.neck = lerp(P.neck, 0.2, k); P.earPerk = lerp(P.earPerk, 0.2, k);
+      if (deer.state !== 'rest') { P.neck = lerp(P.neck, 0.2, k); P.earPerk = lerp(P.earPerk, 0.2, k); }
     }
   }
   return P;
@@ -950,7 +1050,7 @@ function poseFor(t) {
 
 // Smooth the big "posture" channels so state changes ease instead of snapping.
 function smoothPose(P, dt) {
-  const keysS = { neck: 9, neckLen: 9, earPerk: 12, tailRaise: 14, crouch: 12, tilt: 8 };
+  const keysS = { neck: 9, neckLen: 9, earPerk: 12, tailRaise: 14, crouch: 12, tilt: 8, pitch: 14 };
   if (!deer.sm) { deer.sm = {}; for (const k in keysS) deer.sm[k] = P[k]; }
   for (const k in keysS) { deer.sm[k] += (P[k] - deer.sm[k]) * Math.min(1, dt * keysS[k]); P[k] = deer.sm[k]; }
   return P;
@@ -1101,7 +1201,6 @@ function drawDebug() {
   const b = bodyCenter(), h = headPos();
   const circle = (x, y, r, c) => { wg.strokeStyle = c; wg.lineWidth = 1; wg.beginPath(); wg.arc(x, y, r, 0, TAU); wg.stroke(); };
   circle(b.x, b.y, CURIOUS_DIST, 'rgba(255,255,255,.5)');
-  circle(b.x, b.y, SCARE_DIST * (1 - deer.trust * 0.4), 'rgba(229,72,77,.7)');
   circle(h.x, h.y, PET_DIST, 'rgba(229,72,77,.9)');
   wg.fillStyle = '#3b2317';
   wg.font = '6px monospace';
@@ -1124,7 +1223,7 @@ function setAuto(v) {
   autoBtn.textContent = 'AUTO MODE: ' + (v ? 'ON' : 'OFF');
   autoBtn.classList.toggle('on', v);
   deer.target = null; deer.afterArrive = null;
-  if (['walk', 'run', 'curious', 'fed', 'pet'].includes(deer.state) && !deer.flee) setState('stand');
+  if (['walk', 'run', 'curious', 'fed', 'pet'].includes(deer.state)) setState('stand');
   deer.idleDur = rand(1.5, 3);
 }
 autoBtn.addEventListener('click', e => { setAuto(!auto); e.currentTarget.blur(); });
@@ -1150,7 +1249,7 @@ function frame(now) {
   P.lie = deer.lie >= 0.6 ? 1 : 0;
   renderDeer(P, T);
   render(T, P);
-  const ui = (LABELS[deer.state] || deer.state) + (deer.flee ? ' (fleeing)' : '');
+  const ui = LABELS[deer.state] || deer.state;
   if (ui !== lastUi) { stateEl.textContent = ui; lastUi = ui; }
   trustEl.style.width = Math.round(deer.trust * 100) + '%';
   requestAnimationFrame(frame);
