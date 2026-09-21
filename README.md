@@ -1,101 +1,68 @@
 # Deer Friend 🦌
 
-A little pixel-art white-tailed doe that hangs around on your Mac desktop —
-inspired by Anthropic's mascot deer. She's not a sprite sheet; she's a tiny
-procedural rig (body / neck / head / ears / 4 legs / tail) rendered onto a
-low-res canvas each frame and scaled up with nearest-neighbor filtering, so
-every animation is just joint angles over time instead of hand-painted frames.
+A little pixel-art white-tailed fawn who lives on your Mac desktop. She wanders along the bottom
+of your screen (or on top of any window), grazes, chews, plays, naps, watches your cursor, and
+lets you pet and feed her. Turn on Friend Mode and she gets a companion to play, run around and
+nap with.
 
-She lives in a small, click-through, transparent, always-on-top window that
-repositions itself to follow her as she roams — she never blocks clicks on
-your desktop or other apps, and she's not a real window you can accidentally
-close.
+She isn't a sprite sheet: she's a small procedural rig (torso, neck, head, ears, jointed legs,
+tail) drawn onto a tiny canvas each frame, snapped to a palette and outlined, so every animation
+is just joint angles over time.
 
-## Running her
+## Run her on your Mac
 
 ```bash
 ./build_app.sh
 open DeerFriend.app
 ```
 
-She has no Dock icon or menu — just a 🦌 in your menu bar with:
-- **Show Debug Info** — small HUD over her showing current state / cursor distance / cursor speed / trust
-- **Reset Trust** — reset how "tame" she's gotten
-- **Quit Deer Friend**
+Requires macOS 13+ and the Xcode command-line tools (`xcode-select --install`). To keep her
+around, move `DeerFriend.app` into `/Applications`, then turn on **Launch at Login** in her menu.
 
-To stop her without the menu: `pkill -f DeerFriend.app`
+Everything is controlled from the 🦌 in the menu bar:
 
-## How she reacts to your cursor
+| Menu item | What it does |
+| --- | --- |
+| Hide Deer / Show Deer | Tucks her away (and stops animating) until you bring her back |
+| Friend Mode | Adds a second fawn: they play together, run around, nap side by side, or ignore each other |
+| Auto Mode (Ignore Cursor) | She just lives her life and pays no attention to the cursor |
+| Watch the Cursor | Her head follows the cursor, even swivelling back over her shoulder |
+| Follow the Cursor | She walks (or runs) to stay next to the cursor |
+| Live On | Bottom of the screen, or perched on top of any window (she rides along when you move it) |
+| Display / Size | Which screen, and Small / Medium / Large |
+| Launch at Login | Start her automatically when you log in |
 
-No accessibility/screen-recording permissions needed — she just polls
-`NSEvent.mouseLocation` (your cursor's on-screen position), which is a plain
-Cocoa read, not an event tap.
+Her window is click-through, so she never gets in the way of your clicks.
 
-- **Move your cursor fast and get close** → she startles (ears up, tail flags
-  white — the real white-tail alarm display) and bolts in the opposite
-  direction.
-- **Approach slowly** → within ~360px and moving calmly, she gets curious and
-  faces you. Get within ~75px while still moving slowly and holding there for
-  a moment → she'll let you feed her, then pet her. Being fed/petted slowly
-  raises a "trust" meter (currently in-memory only, resets on quit / via the
-  menu).
-- Otherwise she just does her own thing: standing, looking around, walking to
-  a new spot, grazing, chewing, chewing-while-looking-around, occasional
-  playful jumps, and — after a couple minutes with no interaction — lying
-  down to sleep (a fast cursor nearby will still startle her awake).
+**Petting and feeding:** move the cursor slowly up to her and she gets curious; hover near her
+to pet her (hearts), or hold the mouse button down by her mouth to feed her a clover.
 
-All the thresholds (scare distance/speed, curious/pet radius, hold time) are
-in `DeerBrain.Tuning` at the top of
-[`Sources/DeerFriend/DeerBrain.swift`](Sources/DeerFriend/DeerBrain.swift) —
-good first thing to play with.
+## Browser prototype + Design Lab
 
-## Project layout
-
-- `DeerPose.swift` — the rig's joint parameters for a single frame (leg
-  angles, neck angle, ear perk, tail flag, etc).
-- `AnimationClips.swift` — pure functions turning "time / gait phase" into a
-  `DeerPose` for each animation (standing, walking, running, grazing, …).
-- `DeerRenderer.swift` — draws a `DeerPose` into a tiny off-screen bitmap
-  (antialiasing off) and returns a `CGImage`; this is the actual pixel-art
-  drawing code (body/leg/tail/head shapes, palette).
-- `DeerBrain.swift` — the behavior state machine: tracks the cursor,
-  decides what state she's in, moves her around the screen, and picks the
-  pose each tick.
-- `DeerView.swift` / `AppDelegate.swift` — the transparent overlay window
-  that follows her and blits whatever `DeerBrain` produced.
-- `StatusBarController.swift` — the 🦌 menu bar item.
-
-## Dev tool: pose snapshots
-
-Render every animation pose straight to PNG (no live window, no permissions)
-to eyeball the rig after changes:
-
-```bash
-swift build -c release
-.build/release/DeerFriend --snapshot /tmp/deer_snapshots
-open /tmp/deer_snapshots
-```
-
-## Ideas for next iterations
-
-- Persist trust across launches (small JSON/UserDefaults file).
-- Distinguish "feed" (click-and-hold to offer food) from "pet" (just
-  hovering) as separate gestures rather than one time-based approach.
-- Multi-monitor support (currently roams the main screen's visible frame).
-- React to real windows (walk along a window's top edge, like Shimeji).
-- Idle sound effects (small hoof steps, a soft chuff).
-- Swap the procedural rig for hand-painted sprite sheets if you want a more
-  bespoke look, while keeping `DeerBrain`'s state machine as-is.
-
-## Browser prototype (current focus)
-
-`web/index.html` is a self-contained browser version with the redesigned
-spotted-fawn sprite (knee/hock joints, head that follows the neck, flagging
-tail, tongue), a meadow with flowers and butterflies, and an **Auto mode**
-toggle. Auto on: she roams, grazes, plays, sleeps and reacts to your cursor.
-Auto off: drive her with the keyboard/mouse (see the Controls panel).
+The whole deer lives in one file, [`web/index.html`](web/index.html). Open it in a browser for a
+meadow to play in, keyboard controls, and the **🎨 Design Lab**, which has 10 numbered variants
+for each body part (body, legs, neck, head, face, ears, tail) with a live preview. Picks are saved
+in the browser; the Mac app uses `DEFAULT_SEL` in `web/index.html`, so copy the lab's code there
+and rebuild to change her look on the desktop.
 
 ```bash
 python3 -m http.server 8742 --directory web
-open http://localhost:8742
+open http://localhost:8742          # add ?desktop to preview the transparent desktop mode
 ```
+
+Keys: arrows/WASD walk (Shift runs), Space jump, E eat, C chew, V chew+look, L look, G stare,
+Z sleep, R rest, P play, T toggles auto mode.
+
+## How it fits together
+
+- `web/index.html` holds the rig, animations, behavior (state machine, friend "director", cursor
+  reactions) and rendering. In desktop mode it has a transparent background and no UI, and it runs
+  on an adaptive timer (24 fps moving / 12 fps idle / 8 fps asleep) to stay light on CPU.
+- `Sources/DeerFriend/AppDelegate.swift` puts that page in a transparent, click-through
+  `WKWebView` window, polls the real cursor and passes it in, and handles placement (screen strip
+  or perched on a window), hiding, and launch at login.
+- `Sources/DeerFriend/StatusBarController.swift` is the 🦌 menu.
+- `Sources/DeerFriend/WindowTracker.swift` reads window positions for perching.
+- `build_app.sh` compiles, bundles the page into the app, and ad-hoc signs it.
+
+See [SECURITY.md](SECURITY.md) for what the app can and can't access.

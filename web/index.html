@@ -4,9 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deer Friend</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<!-- Everything is inline; the only outside request is the pixel font for the browser prototype's panel. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; form-action 'none'">
 <style>
   :root {
     --ink: #3b2317;
@@ -160,6 +159,12 @@
 // Desktop mode: hosted by the Mac app in a transparent, click-through strip above the Dock.
 const DESK = !!window.DEER_DESKTOP || /[?&]desktop\b/.test(location.search);   // ?desktop to preview in a browser
 if (DESK) document.documentElement.classList.add('desktop');
+else {
+  const font = document.createElement('link');
+  font.rel = 'stylesheet';
+  font.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
+  document.head.appendChild(font);
+}
 
 // ─────────────────────────── utils ───────────────────────────
 const TAU = Math.PI * 2;
@@ -1407,7 +1412,6 @@ function spawn(type, x, y, c) {
   if (type === 'crumb' || type === 'petal') { p.vx = rand(-12, 12); p.vy = rand(-18, -6); p.life = 0.7; p.g = 60; }
   if (type === 'z') { p.vx = 5; p.vy = -7; p.life = 2; }
   if (type === 'dust') { p.vx = rand(-8, 8); p.vy = rand(-4, -1); p.life = 0.45; }
-  if (type === 'bang') { p.life = 0.8; }
   particles.push(p);
 }
 function emitParticles(dt) {
@@ -1435,7 +1439,6 @@ function updateParticles(dt) {
 const MAPS = {
   heart: ['.#.#.', '#####', '#####', '.###.', '..#..'],
   z: ['###', '..#', '.#.', '#..', '###'],
-  bang: ['#', '#', '#', '.', '#'],
   hand: [
     '....##......', '...#ww#.....', '...#ww#.....', '...#ww###...', '...#ww#ww##.',
     '.###ww#ww#w#', '#ww#wwwwww#.', '#wwwwwwwwww#', '.#wwwwwwwww#', '..#wwwwwwww#',
@@ -1540,7 +1543,6 @@ function drawParticles(list) {
     wg.globalAlpha = a;
     if (p.type === 'heart') drawMap(wg, MAPS.heart, p.x - 2, p.y, { '#': '#e5484d' });
     else if (p.type === 'z') drawMap(wg, MAPS.z, p.x, p.y, { '#': '#fbf3e4' });
-    else if (p.type === 'bang') drawMap(wg, MAPS.bang, p.x, p.y + (1 - p.life) * -4, { '#': '#e5484d' });
     else if (p.type === 'dust') { wg.fillStyle = '#d9cfae'; wg.fillRect(Math.round(p.x), Math.round(p.y), 2, 1); }
     else { wg.fillStyle = p.c; wg.fillRect(Math.round(p.x), Math.round(p.y), 1, 1); }
     wg.globalAlpha = 1;
@@ -1608,15 +1610,18 @@ function snapTo(canvas, x, [state, t, extra], sx = 3) {
 function labCode() { return PARTS.map(([k, , ab]) => ab + (SEL[k] + 1)).join(' · '); }
 function renderLab() {
   document.getElementById('labCode').textContent = labCode();
-  const pv = document.getElementById('labPreview'); pv.innerHTML = '';
+  const pv = document.getElementById('labPreview'); pv.replaceChildren();
   for (const pose of PREVIEW) {
     const c = document.createElement('canvas'); c.width = CROP.w * 3; c.height = CROP.h * 3;
     snapTo(c, 0, pose); pv.appendChild(c);
   }
-  const rows = document.getElementById('labRows'); rows.innerHTML = '';
+  const rows = document.getElementById('labRows'); rows.replaceChildren();
   for (const [k, name, ab] of PARTS) {
     const row = document.createElement('div'); row.className = 'labRow';
-    row.innerHTML = `<h3>${name} <span style="opacity:.6">(${ab}1–${ab}10)</span></h3>`;
+    const h3 = document.createElement('h3'), range = document.createElement('span');
+    h3.textContent = name + ' ';
+    range.textContent = `(${ab}1–${ab}10)`; range.style.opacity = '.6';
+    h3.appendChild(range); row.appendChild(h3);
     const grid = document.createElement('div'); grid.className = 'labGrid';
     const keep = SEL[k], views = PART_VIEWS[k];
     for (let i = 0; i < 10; i++) {
@@ -1707,7 +1712,7 @@ for (const k of ['ignore', 'watch', 'follow', 'friend']) {
 setFriend(!!OPT.friend);
 syncOptionBoxes();
 
-// Dev hook: window.deerDebug.pose('graze') etc. from the console
+// Dev hook for the console / Design Lab, e.g. window.deerDebug.renderState('graze', 1.2)
 window.deerDebug = {
   get deer() { return herd[0]; }, herd, social, OPT, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
   // Render one pose synchronously (works even when rAF is paused): renderState('graze', 1.2, {lie: 1})

@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var perchTimer: Timer?
     private var lastCursor = (x: CGFloat.nan, y: CGFloat.nan, down: false)
     private let defaults = UserDefaults.standard
+    private var pageFile: URL?
 
     /// Logical px tall: room for jumps, hearts and Z's above the ground line.
     private let stripHeight: CGFloat = 150
@@ -56,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         webView = web
 
         if let url = pageURL() {
+            pageFile = url
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             NSLog("DeerFriend: couldn't find web/index.html")
@@ -201,6 +203,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     // MARK: - WKNavigationDelegate
+
+    /// The web view only ever shows the bundled page — any other navigation is refused.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let url = navigationAction.request.url
+        let allowed = url?.isFileURL == true && url?.standardizedFileURL.path == pageFile?.standardizedFileURL.path
+        decisionHandler(allowed ? .allow : .cancel)
+    }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         NSLog("DeerFriend: page failed to load: \(error)")
