@@ -169,12 +169,12 @@ function seg(g, ax, ay, bx, by, w1, w2, col) {
 function frontLeg(g, x, y, L, col) {
   const au = L.s + L.f * 0.35;
   const al = au - L.f * 1.75;
-  const kx = x + 9.5 * Math.sin(au), ky = y + 9.5 * Math.cos(au);
-  const hx = kx + 9 * Math.sin(al), hy = ky + 9 * Math.cos(al);
-  seg(g, x, y, kx, ky, 4, 2.6, col);
-  ell(g, kx, ky, 1.5, 1.5, 0, col);          // knobbly fawn knee
-  seg(g, kx, ky, hx, hy, 2.3, 2, col);
-  g.fillStyle = COL.hoof; g.fillRect(hx - 1.3, hy - 1.2, 2.8, 2.2);
+  const kx = x + 11 * Math.sin(au), ky = y + 11 * Math.cos(au);
+  const hx = kx + 10.5 * Math.sin(al), hy = ky + 10.5 * Math.cos(al);
+  seg(g, x, y, kx, ky, 3.2, 1.9, col);
+  ell(g, kx, ky, 1.25, 1.25, 0, col);        // knobbly fawn knee
+  seg(g, kx, ky, hx, hy, 1.7, 1.5, col);
+  g.fillStyle = COL.hoof; g.fillRect(hx - 1.1, hy - 1.2, 2.3, 2.2);
 }
 
 // Hind leg: thigh goes down-FORWARD to the stifle, gaskin goes down-BACK to the hock,
@@ -183,31 +183,38 @@ function hindLeg(g, x, y, L, col) {
   const t1 = L.s + 0.32 + L.f * 0.55;
   const t2 = L.s - 0.5 - L.f * 0.6;
   const t3 = L.s + 0.1 + L.f * 1.05;
-  const sx = x + 8.5 * Math.sin(t1), sy = y + 8.5 * Math.cos(t1);
-  const kx = sx + 8.2 * Math.sin(t2), ky = sy + 8.2 * Math.cos(t2);
-  const hx = kx + 7.8 * Math.sin(t3), hy = ky + 7.8 * Math.cos(t3);
-  seg(g, x, y, sx, sy, 7, 4, col);           // meaty thigh
-  seg(g, sx, sy, kx, ky, 3.8, 2.4, col);     // gaskin
-  ell(g, kx, ky, 1.4, 1.4, 0, col);          // hock
-  seg(g, kx, ky, hx, hy, 2.3, 2, col);       // cannon
-  g.fillStyle = COL.hoof; g.fillRect(hx - 1.3, hy - 1.2, 2.8, 2.2);
+  const sx = x + 9.5 * Math.sin(t1), sy = y + 9.5 * Math.cos(t1);
+  const kx = sx + 9.2 * Math.sin(t2), ky = sy + 9.2 * Math.cos(t2);
+  const hx = kx + 8.8 * Math.sin(t3), hy = ky + 8.8 * Math.cos(t3);
+  seg(g, x, y, sx, sy, 5.2, 2.9, col);       // skinny thigh
+  seg(g, sx, sy, kx, ky, 2.7, 1.8, col);     // gaskin
+  ell(g, kx, ky, 1.15, 1.15, 0, col);        // bony hock
+  seg(g, kx, ky, hx, hy, 1.7, 1.5, col);     // cannon
+  g.fillStyle = COL.hoof; g.fillRect(hx - 1.1, hy - 1.2, 2.3, 2.2);
 }
 
 // Tail: resting = hangs down/back with brown on top. raise=1 → straight UP, white fanned (alarm flag).
 function tail(g, x, y, raise, wag) {
   const a = lerp(2.25, 4.71, raise) + wag * 0.5;
-  const w = 1.8 + raise * 1.1;
+  const w = 1.4 + raise * 1.2;
   g.save(); g.translate(x, y); g.rotate(a);
-  ell(g, 3.5, 0, 3.7, w, 0, COL.white);
+  g.fillStyle = COL.white;                   // teardrop that tapers to a point
+  g.beginPath(); g.moveTo(0, -w); g.quadraticCurveTo(5, -w * 1.1, 7.2, 0);
+  g.quadraticCurveTo(5, w * 1.1, 0, w); g.closePath(); g.fill();
   const br = 1 - raise * 0.85;
-  if (br > 0.05) ell(g, 3.2, w * 0.4, 3.4, w * 0.7 * br, 0, COL.coat);
+  if (br > 0.05) ell(g, 3, w * 0.45, 3.2, w * 0.6 * br, 0, COL.coat);
   g.restore();
 }
 
 function ear(g, x, y, a, col, inner) {
   g.save(); g.translate(x, y); g.rotate(a);
-  ell(g, 4.2, 0, 4.5, 2.4, 0, col);
-  if (inner) ell(g, 4.6, 0.4, 3, 1.25, 0, inner);
+  const leaf = (len, w, dx, c) => {
+    g.fillStyle = c; g.beginPath(); g.moveTo(dx, -w);
+    g.quadraticCurveTo(dx + len * 0.55, -w * 1.5, dx + len, 0.2);
+    g.quadraticCurveTo(dx + len * 0.55, w * 1.35, dx, w); g.closePath(); g.fill();
+  };
+  leaf(9.8, 2.1, 0, col);
+  if (inner) leaf(6.6, 1.05, 1.8, inner);
   g.restore();
 }
 
@@ -215,19 +222,19 @@ function ear(g, x, y, a, col, inner) {
 function head(g, P) {
   const eA = lerp(-2.75, -1.85, P.earPerk) + P.earFlick;
   ear(g, -0.8, -3.2, eA - 0.35, COL.coatDark, null);                 // far ear
-  ell(g, 1.2, 0, 5, 4.4, 0, COL.coat);                                // cranium
-  g.fillStyle = COL.coat;                                             // muzzle
-  g.beginPath(); g.moveTo(2.5, -3.4); g.lineTo(10.2, -1.8);
-  g.quadraticCurveTo(12.9, 0.1, 10.4, 2.4); g.lineTo(3, 3.9); g.closePath(); g.fill();
-  ell(g, 1.4, -2.7, 3.3, 1.4, 0.15, COL.coatDeep);                   // darker forehead
-  ell(g, 7.6, 2.9 + P.chew * 1.2, 3.3, 1.3, 0.1, COL.cream);         // lower jaw (chews)
-  ell(g, 10, 1.4, 1.6, 1.05, 0, COL.cream);                          // white muzzle
+  ell(g, 1.2, 0, 4.4, 3.9, 0, COL.coat);                              // cranium
+  g.fillStyle = COL.coat;                                             // long, tapered muzzle
+  g.beginPath(); g.moveTo(2.5, -3.1); g.lineTo(11.2, -1.4);
+  g.quadraticCurveTo(13.8, 0.1, 11.4, 1.8); g.lineTo(3, 3.4); g.closePath(); g.fill();
+  ell(g, 1.4, -2.5, 3.1, 1.3, 0.15, COL.coatDeep);                   // darker forehead
+  ell(g, 8.2, 2.4 + P.chew * 1.2, 3.6, 1.1, 0.12, COL.cream);        // lower jaw (chews)
+  ell(g, 11, 1.1, 1.5, 0.95, 0, COL.cream);                          // white muzzle
   if (P.tongue > 0.08) {                                              // blep!
     const k = P.tongue;
-    ell(g, 10.6 + k * 1.3, 2.7 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
-    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(10.9 + k * 1.2, 2.6 + k * 0.8, 1, 1);
+    ell(g, 11.4 + k * 1.3, 2.4 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
+    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(11.7 + k * 1.2, 2.3 + k * 0.8, 1, 1);
   }
-  ell(g, 11.8, -0.1, 1.55, 1.4, 0, COL.nose);                        // nose
+  ell(g, 12.8, -0.1, 1.35, 1.25, 0, COL.nose);                        // nose
   ell(g, 3.6, -1.3, 2.25, 2.05, 0, COL.cream);                       // eye ring
   if (P.eye > 0.3) {
     ell(g, 3.6, -1.3, 1.5 + P.eyeWide * 0.35, Math.max(0.6, 1.6 * P.eye) + P.eyeWide * 0.35, 0, COL.eye);
@@ -249,36 +256,45 @@ const SPOTS = (() => {
 })();
 
 function bodyPath(g, dy) {
+  const q = (cx, cy, x, y) => g.quadraticCurveTo(cx, cy + dy, x, y + dy);
   g.beginPath();
-  g.moveTo(31 + 8.5, 41 + dy);   g.ellipse(31, 41 + dy, 8.5, 7.5, 0, 0, TAU);    // rump
-  g.moveTo(40.5 + 11.5, 41.5 + dy); g.ellipse(40.5, 41.5 + dy, 11.5, 7, 0, 0, TAU); // barrel
-  g.moveTo(50 + 7.5, 42 + dy);   g.ellipse(50, 42 + dy, 7.5, 7.5, 0, 0, TAU);    // chest
+  g.moveTo(24, 36.5 + dy);          // tail root
+  q(26, 33.2, 30, 33.3);            // bony, slightly pointed croup
+  q(36, 34.2, 41, 35.2);            // gentle sway in the back
+  q(47, 35.3, 51, 34.3);            // withers
+  q(56.5, 34.8, 56.8, 39.5);        // point of shoulder
+  q(57, 46.5, 51.5, 48.6);          // deep little brisket
+  q(46.5, 49, 42, 46.8);            // belly
+  q(37, 44.2, 33, 44.8);            // skinny tucked-up flank
+  q(26.5, 45.6, 24.4, 41.5);        // back of the thigh
+  q(23.3, 38.6, 24, 36.5);
+  g.closePath();
 }
 
 function drawStanding(g, P) {
-  const dy = -P.bob + P.crouch * 4;
-  frontLeg(g, 47, 45 + dy, P.legs[0], COL.coatDark);   // far legs first
-  hindLeg(g, 29, 41 + dy, P.legs[2], COL.coatDark);
-  tail(g, 23.5, 35 + dy, P.tailRaise, P.tailWag);
+  const dy = -P.bob + P.crouch * 4 - 3;   // -3: taller, leggier fawn
+  frontLeg(g, 48, 44.5 + dy, P.legs[0], COL.coatDark);   // far legs first
+  hindLeg(g, 29.5, 40 + dy, P.legs[2], COL.coatDark);
+  tail(g, 24.5, 35.5 + dy, P.tailRaise, P.tailWag);
 
   g.save();
   bodyPath(g, dy); g.fillStyle = COL.coat; g.fill(); g.clip();
   ell(g, 40, 35.3 + dy, 17, 3.6, 0, COL.coatDeep);    // dorsal band
-  ell(g, 41, 48.6 + dy, 11.5, 2.8, 0, COL.cream);     // belly
-  ell(g, 23.2, 41 + dy, 2.2, 4.6, 0, COL.cream);      // white rump
+  ell(g, 45, 48.4 + dy, 8.5, 2.3, 0, COL.cream);      // belly
+  ell(g, 24.2, 40.5 + dy, 1.8, 4, 0, COL.cream);      // white rump
   g.fillStyle = COL.white;
   for (const [x, y] of SPOTS) g.fillRect(x, y + dy, 1.15, 1.15);
   g.restore();
 
-  hindLeg(g, 31, 42 + dy, P.legs[3], COL.coat);        // near legs over body
-  frontLeg(g, 49.5, 46 + dy, P.legs[1], COL.coat);
+  hindLeg(g, 31.5, 41 + dy, P.legs[3], COL.coat);        // near legs over body
+  frontLeg(g, 50.5, 45.5 + dy, P.legs[1], COL.coat);
 
   // Neck + head. Head angle is derived from the neck angle so it always follows it.
   const bx = 52.5, by = 37 + dy, n = P.neck, L = P.neckLen;
   const ux = Math.cos(n), uy = Math.sin(n), px = -uy, py = ux;
   const tx = bx + ux * L, ty = by + uy * L;
-  seg(g, bx, by, tx, ty, 8, 5.6, COL.coat);
-  ell(g, tx - ux * 2.6 + px * 2, ty - uy * 2.6 + py * 2, 2, 1.5, n, COL.cream); // throat patch
+  seg(g, bx, by, tx, ty, 6.4, 4.2, COL.coat);
+  ell(g, tx - ux * 2.4 + px * 1.5, ty - uy * 2.4 + py * 1.5, 1.8, 1.2, n, COL.cream); // throat patch
   g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt);
   head(g, P);
   g.restore();
@@ -824,7 +840,7 @@ function eatFlowerIfAny() {
 // ─────────────────────────── poses ───────────────────────────
 function basePose() {
   return {
-    bob: 0, crouch: 0, neck: -1.05, neckLen: 12, tilt: 0, earPerk: 0.75, earFlick: 0,
+    bob: 0, crouch: 0, neck: -1.05, neckLen: 13, tilt: 0, earPerk: 0.75, earFlick: 0,
     eye: 1, eyeWide: 0, chew: 0, tongue: 0, tailRaise: 0.05, tailWag: 0, lie: 0,
     legs: [{ s: 0.04, f: 0 }, { s: 0.02, f: 0 }, { s: 0, f: 0 }, { s: -0.02, f: 0 }],
   };
@@ -841,7 +857,7 @@ function gait(P, phase, A, F, offs) {
 }
 
 function aimNeck(tx, ty) {
-  const bx = deer.x + deer.face * (52.5 - ANCHOR_X), by = deer.y - (GROUND - 37) - deer.z;
+  const bx = deer.x + deer.face * (52.5 - ANCHOR_X), by = deer.y - (GROUND - 34) - deer.z;
   const dx = (tx - bx) * deer.face, dy = ty - by;
   return { n: clamp(Math.atan2(dy, Math.max(3, dx)) - 0.25, -1.5, 1.3), d: Math.hypot(dx, dy) };
 }
@@ -884,7 +900,7 @@ function poseFor(t) {
     case 'sleep':
       P.neck = 0.2; P.earPerk = 0.2; P.eye = deer.lie > 0.3 ? 0 : 1; break;
     case 'graze':
-      P.neck = 1.2; P.neckLen = 16; P.crouch = 0.12; P.chew = Math.sin(t * 9) * 0.5 + 0.5;
+      P.neck = 1.2; P.neckLen = 19; P.crouch = 0.12; P.chew = Math.sin(t * 9) * 0.5 + 0.5;
       P.tilt = -0.3 + Math.sin(t * 0.7) * 0.08;   // muzzle angled forward into the grass
       P.legs[0].s = 0.2; P.legs[1].s = -0.04; P.earPerk = 0.55; P.tailWag = Math.sin(t * 1.1) * 0.2; break;
     case 'chew':
@@ -902,7 +918,7 @@ function poseFor(t) {
     }
     case 'fed': {
       const a = aimNeck(mouse.x, mouse.y);
-      P.neck = a.n; P.neckLen = clamp(a.d - 11, 11, 16); P.chew = Math.sin(t * 12) * 0.5 + 0.5;
+      P.neck = a.n; P.neckLen = clamp(a.d - 11, 12, 19); P.chew = Math.sin(t * 12) * 0.5 + 0.5;
       P.tongue = Math.max(0, Math.sin(t * 7)); // licking your hand
       P.eye = 0.8; P.earPerk = 0.8; P.tailRaise = 0.3; P.tailWag = Math.sin(t * 9) * 0.7; break;
     }
