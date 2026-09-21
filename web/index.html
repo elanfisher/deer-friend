@@ -55,6 +55,35 @@
   #toast.show { opacity: 1; }
   #hide { position: absolute; top: 6px; right: 6px; padding: 1px 5px; font-size: 8px; box-shadow: none; }
   #panel.min > :not(h1):not(#hide) { display: none; }
+  #labBtn { width: 100%; margin-top: 8px; padding: 7px 4px; }
+  #lab {
+    position: fixed; inset: 0; z-index: 50; display: none; overflow-y: auto;
+    background: var(--paper); color: var(--ink); font-family: 'Press Start 2P', ui-monospace, monospace;
+  }
+  #lab.open { display: block; }
+  #labTop {
+    position: sticky; top: 0; z-index: 2; background: var(--paper-2);
+    border-bottom: 3px solid var(--ink); padding: 10px 14px;
+  }
+  #labTop .bar1 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  #labTop h2 { font-size: 12px; margin: 0; flex: 1; min-width: 180px; }
+  #labCode { font-size: 11px; background: #fff; border: 2px solid var(--ink); padding: 6px 8px; }
+  #labPreview { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; background: #8fbf62; border: 2px solid var(--ink); padding: 4px; }
+  #labPreview canvas { image-rendering: pixelated; height: 150px; flex: none; }
+  #labRows { padding: 10px 14px 40px; }
+  .labRow h3 { font-size: 10px; margin: 18px 0 8px; }
+  .labGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+  .labCell {
+    position: relative; background: #8fbf62; border: 3px solid var(--ink); cursor: pointer; padding: 0;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .labCell canvas { display: block; width: 100%; image-rendering: pixelated; }
+  .labCell b {
+    position: absolute; left: 4px; top: 4px; background: var(--paper); border: 2px solid var(--ink);
+    font-size: 12px; padding: 3px 5px; font-weight: normal;
+  }
+  .labCell.sel { border-color: var(--heart); box-shadow: 0 0 0 3px var(--heart); }
+  .labCell.sel b { background: var(--heart); color: #fff; }
 </style>
 </head>
 <body>
@@ -97,8 +126,22 @@
     </ul>
   </details>
   <div class="row" style="margin-top:6px"><label><input type="checkbox" id="debug"> show reaction radii</label></div>
+  <button id="labBtn">🎨 Design Lab</button>
 </div>
 <div id="toast"></div>
+<div id="lab">
+  <div id="labTop">
+    <div class="bar1">
+      <h2>🎨 Design Lab — pick one number per part</h2>
+      <span id="labCode"></span>
+      <button id="labCopy">Copy</button>
+      <button id="labReset">Reset</button>
+      <button id="labClose">Done ✕</button>
+    </div>
+    <div id="labPreview"></div>
+  </div>
+  <div id="labRows"></div>
+</div>
 
 <script>
 (() => {
@@ -146,7 +189,7 @@ const OUTLINE_RGB = hexRgb(COL.outline);
 // Everything below is authored facing RIGHT in a 96×72 canvas, y-down, ground at y=66.
 // The rig is drawn with normal (antialiased) canvas shapes, then snapped to the palette,
 // alpha-thresholded, and outlined — so the result is crisp pixel art.
-const PAD = 12, DW = 96, DH = 72 + PAD, GROUND = 66 + PAD, ANCHOR_X = 40;   // rig is authored with ground at 66
+const PAD = 18, DW = 96, DH = 72 + PAD, GROUND = 66 + PAD, ANCHOR_X = 40;   // rig is authored with ground at 66
 const dc = document.createElement('canvas');
 dc.width = DW; dc.height = DH;
 const dg = dc.getContext('2d', { willReadFrequently: true });
@@ -169,38 +212,121 @@ function seg(g, ax, ay, bx, by, w1, w2, col) {
   g.beginPath(); g.arc(bx, by, w2 / 2, 0, TAU); g.fill();
 }
 
+// ─────────────────────────── body-part variants (Design Lab) ───────────────────────────
+// Every body part has 10 numbered variants. SEL holds the chosen index (0-based) per part;
+// C is the resolved config the rig reads from. Picks persist in localStorage.
+const VARIANTS = {
+  torso: [ // L length, D depth, arch of back, rump roundness/drop, chest depth, belly tuck
+    { L: 30, D: 13,   arch: 1.0, rump: 0.8, chest: 0.5, tuck: 1.5 },
+    { L: 32, D: 14,   arch: 1.2, rump: 0.9, chest: 1.0, tuck: 2.0 },
+    { L: 34, D: 14,   arch: 1.0, rump: 1.0, chest: 1.0, tuck: 2.0 },
+    { L: 34, D: 15,   arch: 1.8, rump: 1.0, chest: 1.5, tuck: 2.5 },
+    { L: 36, D: 14,   arch: 1.2, rump: 1.0, chest: 1.0, tuck: 2.0 },
+    { L: 36, D: 15.5, arch: 2.2, rump: 1.1, chest: 1.5, tuck: 3.0 },
+    { L: 38, D: 15,   arch: 1.5, rump: 1.0, chest: 1.0, tuck: 2.5 },
+    { L: 33, D: 16,   arch: 1.2, rump: 0.8, chest: 2.0, tuck: 3.0 },
+    { L: 35, D: 13,   arch: 0.6, rump: 1.2, chest: 0.8, tuck: 1.5 },
+    { L: 37, D: 16,   arch: 2.5, rump: 1.2, chest: 1.8, tuck: 3.2 },
+  ],
+  legs: [ // fu forearm, fl cannon (front); hind legs auto-fit to the ground; w thickness
+    { fu: 11, fl: 10.5, w: 1.0 },  { fu: 12, fl: 11.5, w: 1.0 },  { fu: 12.5, fl: 12, w: 0.9 },
+    { fu: 13, fl: 12.5, w: 1.0 },  { fu: 13.5, fl: 13, w: 0.85 }, { fu: 13, fl: 12.5, w: 1.2 },
+    { fu: 14, fl: 13.5, w: 0.9 },  { fu: 12, fl: 11.5, w: 1.25 }, { fu: 14.5, fl: 14, w: 0.8 },
+    { fu: 15, fl: 14.5, w: 0.9 },
+  ],
+  neck: [ // len, w0 base thickness, w1 top thickness
+    { len: 11, w0: 6.5, w1: 4.2 }, { len: 12.5, w0: 7, w1: 4.4 }, { len: 14, w0: 7, w1: 4.2 },
+    { len: 14, w0: 8, w1: 4.8 },   { len: 15, w0: 7.6, w1: 4.4 }, { len: 16, w0: 7, w1: 4 },
+    { len: 16, w0: 8.5, w1: 5 },   { len: 17, w0: 7.5, w1: 4.2 }, { len: 13, w0: 9, w1: 5.2 },
+    { len: 18, w0: 7, w1: 4 },
+  ],
+  head: [ // side view: s overall scale, mz muzzle length, cr cranium size
+    { s: 0.70, mz: 1.0, cr: 1.0 },  { s: 0.75, mz: 1.0, cr: 1.0 },  { s: 0.78, mz: 1.1, cr: 0.95 },
+    { s: 0.80, mz: 0.95, cr: 1.05 }, { s: 0.82, mz: 1.05, cr: 1.0 }, { s: 0.85, mz: 1.0, cr: 0.95 },
+    { s: 0.85, mz: 1.15, cr: 1.0 }, { s: 0.88, mz: 0.95, cr: 1.1 }, { s: 0.90, mz: 1.05, cr: 1.0 },
+    { s: 1.0, mz: 1.0, cr: 1.0 },
+  ],
+  face: [ // looking at the camera: s scale, len muzzle length, wid width, eyes spacing
+    { s: 0.75, len: 1.0, wid: 1.0, eyes: 1.0 },  { s: 0.8, len: 1.1, wid: 0.95, eyes: 1.05 },
+    { s: 0.85, len: 1.0, wid: 1.0, eyes: 1.0 },  { s: 0.85, len: 1.2, wid: 0.9, eyes: 1.1 },
+    { s: 0.9, len: 1.1, wid: 1.0, eyes: 1.1 },   { s: 0.9, len: 0.95, wid: 1.1, eyes: 1.0 },
+    { s: 0.95, len: 1.15, wid: 0.95, eyes: 1.15 }, { s: 1.0, len: 1.05, wid: 1.0, eyes: 1.1 },
+    { s: 1.05, len: 1.2, wid: 0.9, eyes: 1.15 }, { s: 1.3, len: 1.0, wid: 1.0, eyes: 1.0 },
+  ],
+  ears: [ // len, w width, tip (lower = longer taper / pointier)
+    { len: 8, w: 2.2, tip: 0.75 },   { len: 9, w: 2.4, tip: 0.75 },    { len: 10, w: 2.6, tip: 0.66 },
+    { len: 10, w: 3.0, tip: 0.6 },  { len: 11, w: 2.6, tip: 0.6 },   { len: 11, w: 3.2, tip: 0.75 },
+    { len: 11.8, w: 2.8, tip: 0.66 }, { len: 12, w: 2.4, tip: 0.5 }, { len: 12.5, w: 3.2, tip: 0.6 },
+    { len: 13, w: 3.0, tip: 0.55 },
+  ],
+  tail: [ // len, w width, rest angle (bigger = hangs straighter down)
+    { len: 6, w: 1.5, rest: 2.0 },   { len: 7.5, w: 1.7, rest: 2.0 },  { len: 8.5, w: 1.8, rest: 1.95 },
+    { len: 9.5, w: 1.9, rest: 1.9 }, { len: 10.5, w: 1.9, rest: 1.95 }, { len: 10, w: 2.4, rest: 2.1 },
+    { len: 11.5, w: 2.1, rest: 1.85 }, { len: 12, w: 1.8, rest: 2.05 }, { len: 9, w: 2.6, rest: 1.8 },
+    { len: 13, w: 2.3, rest: 1.95 },
+  ],
+};
+const PARTS = [
+  ['torso', 'Body / torso', 'B'], ['legs', 'Legs', 'L'], ['neck', 'Neck', 'N'], ['head', 'Head (side)', 'H'],
+  ['face', 'Face (looking at you)', 'F'], ['ears', 'Ears', 'E'], ['tail', 'Tail', 'T'],
+];
+const DEFAULT_SEL = { torso: 4, legs: 3, neck: 4, head: 4, face: 4, ears: 6, tail: 4 };
+let SEL = { ...DEFAULT_SEL };
+try { Object.assign(SEL, JSON.parse(localStorage.getItem('deerSel') || '{}')); } catch (e) {}
+let C;
+function buildConfig() {
+  C = {};
+  for (const [k] of PARTS) C[k] = VARIANTS[k][clamp(SEL[k] | 0, 0, 9)];
+  // spots laid out to fit this torso: two neat rows along the spine + sparse flank scatter
+  const T = C.torso, rearX = 41 - T.L / 2, frontX = 41 + T.L / 2, topY = 41 - T.D / 2;
+  const r = mulberry32(7), sp = [];
+  for (let x = rearX + 3; x <= frontX - 6; x += 2.3) sp.push([x + r() * 0.5, topY + 1.3 + r() * 0.5]);
+  for (let x = rearX + 4; x <= frontX - 8; x += 2.7) sp.push([x + r() * 0.8, topY + 3.7 + r() * 0.7]);
+  const n = Math.round(T.L / 3);
+  for (let i = 0; i < n; i++) sp.push([rearX + 4 + r() * (T.L - 13), topY + 5.5 + r() * (T.D * 0.62 - 5.5)]);
+  C.spots = sp;
+}
+function saveSel() { try { localStorage.setItem('deerSel', JSON.stringify(SEL)); } catch (e) {} }
+buildConfig();
+const RIG = { nbx: 50.7, nby: 31 };   // neck base in rig coords (updated each standing draw)
+
 // Front leg: forearm → knee (carpus) → cannon. Knee folds BACKWARD when the leg lifts.
 function frontLeg(g, x, y, L, col) {
+  const Lg = C.legs, w = Lg.w;
   const au = L.s + L.f * 0.35;
   const al = au - L.f * 1.75;
-  const kx = x + 13.5 * Math.sin(au), ky = y + 13.5 * Math.cos(au);
-  const hx = kx + 13 * Math.sin(al), hy = ky + 13 * Math.cos(al);
-  seg(g, x, y, kx, ky, 3.2, 1.9, col);
-  ell(g, kx, ky, 1.25, 1.25, 0, col);        // knobbly fawn knee
-  seg(g, kx, ky, hx, hy, 1.7, 1.5, col);
+  const kx = x + Lg.fu * Math.sin(au), ky = y + Lg.fu * Math.cos(au);
+  const hx = kx + Lg.fl * Math.sin(al), hy = ky + Lg.fl * Math.cos(al);
+  seg(g, x, y, kx, ky, 3.2 * w, 1.9 * w, col);
+  ell(g, kx, ky, 1.25 * w, 1.25 * w, 0, col);   // knobbly fawn knee
+  seg(g, kx, ky, hx, hy, 1.7 * w, 1.5 * w, col);
   g.fillStyle = COL.hoof; g.fillRect(hx - 1.1, hy - 1.2, 2.3, 2.2);
 }
 
 // Hind leg: thigh goes down-FORWARD to the stifle, gaskin goes down-BACK to the hock,
 // cannon drops to the hoof — the classic deer zig-zag. Flexing closes every joint.
-function hindLeg(g, x, y, L, col) {
+// k scales the segments so the hoof lands on the ground for whatever torso is chosen.
+const HIND_EXT = 11.3 * Math.cos(0.32) + 11 * Math.cos(0.5) + 10.4 * Math.cos(0.1);
+function hindLeg(g, x, y, L, col, k) {
+  const w = C.legs.w;
   const t1 = L.s + 0.32 + L.f * 0.55;
   const t2 = L.s - 0.5 - L.f * 0.6;
   const t3 = L.s + 0.1 + L.f * 1.05;
-  const sx = x + 11.3 * Math.sin(t1), sy = y + 11.3 * Math.cos(t1);
-  const kx = sx + 11 * Math.sin(t2), ky = sy + 11 * Math.cos(t2);
-  const hx = kx + 10.4 * Math.sin(t3), hy = ky + 10.4 * Math.cos(t3);
-  seg(g, x, y, sx, sy, 5.2, 2.9, col);       // skinny thigh
-  seg(g, sx, sy, kx, ky, 2.7, 1.8, col);     // gaskin
-  ell(g, kx, ky, 1.15, 1.15, 0, col);        // bony hock
-  seg(g, kx, ky, hx, hy, 1.7, 1.5, col);     // cannon
+  const sx = x + 11.3 * k * Math.sin(t1), sy = y + 11.3 * k * Math.cos(t1);
+  const kx = sx + 11 * k * Math.sin(t2), ky = sy + 11 * k * Math.cos(t2);
+  const hx = kx + 10.4 * k * Math.sin(t3), hy = ky + 10.4 * k * Math.cos(t3);
+  seg(g, x, y, sx, sy, 5.2 * w, 2.9 * w, col);   // skinny thigh
+  seg(g, sx, sy, kx, ky, 2.7 * w, 1.8 * w, col); // gaskin
+  ell(g, kx, ky, 1.15 * w, 1.15 * w, 0, col);    // bony hock
+  seg(g, kx, ky, hx, hy, 1.7 * w, 1.5 * w, col); // cannon
   g.fillStyle = COL.hoof; g.fillRect(hx - 1.1, hy - 1.2, 2.3, 2.2);
 }
 
-// Tail: resting = hangs down/back with brown on top. raise=1 → straight UP, white fanned (alarm flag).
+// Tail: rests hanging down the rump with brown on top. raise=1 → straight UP, white flag.
 function tail(g, x, y, raise, wag) {
-  const a = lerp(1.95, 4.6, raise) + wag * 0.45;   // rest: hangs down the rump · alarm: straight up
-  const len = 10.5, w = 1.9 + raise * 1.3;
+  const Tl = C.tail;
+  const a = lerp(Tl.rest, 4.6, raise) + wag * 0.45;
+  const len = Tl.len, w = Tl.w + raise * 1.3;
   const shape = (l, ww, c) => {
     g.fillStyle = c; g.beginPath(); g.moveTo(0, -ww * 0.8);
     g.quadraticCurveTo(l * 0.45, -ww * 1.25, l, 0);
@@ -208,44 +334,45 @@ function tail(g, x, y, raise, wag) {
   };
   g.save(); g.translate(x, y); g.rotate(a);
   shape(len, w, COL.white);                          // white fringe / underside
-  const br = 1 - raise * 0.9;                       // brown top shrinks away when flagged
+  const br = 1 - raise * 0.9;                        // brown top shrinks away when flagged
   if (br > 0.05) { g.save(); g.translate(0, -w * 0.2 * br); shape(len * 0.92, w * 0.72 * br, COL.coat); g.restore(); }
   g.restore();
 }
 
 function ear(g, x, y, a, col, inner) {
+  const E = C.ears;
   g.save(); g.translate(x, y); g.rotate(a);
   const leaf = (len, w, dx, c) => {
-    g.fillStyle = c; g.beginPath(); g.moveTo(dx, -w);
-    g.quadraticCurveTo(dx + len * 0.4, -w * 1.6, dx + len * 0.68, -w * 0.75);
-    g.lineTo(dx + len, 0.25);                                   // sharp tip
-    g.lineTo(dx + len * 0.68, w * 0.65);
-    g.quadraticCurveTo(dx + len * 0.4, w * 1.45, dx, w); g.closePath(); g.fill();
+    g.fillStyle = c; g.beginPath(); g.moveTo(dx, -w * 0.38);            // narrow base
+    g.bezierCurveTo(dx + len * 0.22, -w * 1.35, dx + len * E.tip, -w * 1.3, dx + len, 0);   // broad, then pointed tip
+    g.bezierCurveTo(dx + len * E.tip, w * 1.15, dx + len * 0.22, w * 1.1, dx, w * 0.38);
+    g.closePath(); g.fill();
   };
-  leaf(11.8, 2.8, 0, col);
-  if (inner) leaf(8.6, 1.6, 1.6, inner);
+  leaf(E.len, E.w, 0, col);
+  if (inner) leaf(E.len * 0.7, E.w * 0.6, E.len * 0.2, inner);
   g.restore();
 }
 
 // Head in its own frame: +x = direction the face points. Rotated to follow the neck.
 function head(g, P) {
+  const H = C.head, M = x => (x <= 3 ? x : 3 + (x - 3) * H.mz);   // stretch the muzzle only
+  g.save(); g.scale(H.s, H.s);
   const eA = lerp(-2.75, -1.85, P.earPerk) + P.earFlick;
-  ear(g, -0.8, -3.2, eA - 0.35, COL.coatDark, null);                 // far ear
-  ell(g, 1.2, 0, 5, 4.6, 0, COL.coat);                                // cranium
+  ear(g, -0.6, -4.1, eA - 0.35 + P.earF, COL.coatDark, null);       // far ear
+  ell(g, 1.2, 0, 5 * H.cr, 4.6 * H.cr, 0, COL.coat);                  // cranium
   g.fillStyle = COL.coat;                                             // long, tapered muzzle
-  g.beginPath(); g.moveTo(2.5, -3.7); g.lineTo(12.6, -1.6);
-  g.quadraticCurveTo(15.6, 0.2, 12.8, 2.3); g.lineTo(3, 4.3); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(2.5, -3.7); g.lineTo(M(12.6), -1.6);
+  g.quadraticCurveTo(M(15.6), 0.2, M(12.8), 2.3); g.lineTo(3, 4.3); g.closePath(); g.fill();
   ell(g, 1.4, -2.5, 3.1, 1.3, 0.15, COL.coatDeep);                   // darker forehead
-  ell(g, 9, 3.0 + P.chew * 1.2, 4.4, 1.2, 0.1, COL.cream);         // lower jaw (chews)
-  ell(g, 9.2, -1.1, 3.6, 1.0, 0.12, COL.muzzle);                    // greyish bridge of the nose
-  ell(g, 12.4, 1.0, 1.5, 0.95, 0, COL.cream);
-  ell(g, 12.5, -0.7, 0.7, 1.3, 0, COL.cream);                        // white band behind the nose                          // white muzzle
+  ell(g, M(9), 3.0 + P.chew * 1.2, 4.4 * H.mz, 1.2, 0.1, COL.cream); // lower jaw (chews)
+  ell(g, M(9.2), -1.1, 3.6 * H.mz, 1.0, 0.12, COL.muzzle);          // greyish bridge of the nose
+  ell(g, M(12.4), 1.0, 1.5, 0.95, 0, COL.cream);                     // white muzzle
   if (P.tongue > 0.08) {                                              // blep!
     const k = P.tongue;
-    ell(g, 12.8 + k * 1.3, 2.3 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
-    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(13.1 + k * 1.2, 2.2 + k * 0.8, 1, 1);
+    ell(g, M(12.8) + k * 1.3, 2.3 + k * 0.9, 1.3 + k * 0.9, 1.05 + k * 0.25, 0.4, COL.tongue);
+    if (k > 0.5) g.fillStyle = COL.tongueDeep, g.fillRect(M(13.1) + k * 1.2, 2.2 + k * 0.8, 1, 1);
   }
-  ell(g, 14.2, -0.1, 1.35, 1.25, 0, COL.nose);                        // nose
+  ell(g, M(14.2), -0.1, 1.35, 1.25, 0, COL.nose);                     // nose
   ell(g, 3.6, -1.3, 2.45, 2.25, 0, COL.cream);                       // eye ring
   if (P.eye > 0.3) {
     ell(g, 3.6, -1.3, 1.75 + P.eyeWide * 0.3, Math.max(0.6, 1.8 * P.eye) + P.eyeWide * 0.3, 0, COL.eye);
@@ -253,95 +380,105 @@ function head(g, P) {
   } else {
     g.fillStyle = COL.eye; g.fillRect(2.2, -1.1, 2.9, 0.9);          // closed, sleepy line
   }
-  ear(g, 0.6, -3.7, eA, COL.coat, COL.earInner);                     // near ear
+  ear(g, 0.8, -4.4, eA + P.earN, COL.coat, COL.earInner);           // near ear
+  g.restore();
 }
 
 // Head turned to look straight at the viewer. Origin = top of the neck, y-down.
 function headFront(g, P) {
+  const F = C.face, W = F.wid, Y = y => (y <= 0.4 ? y : 0.4 + (y - 0.4) * F.len);
+  g.save(); g.scale(F.s, F.s);
   const spread = lerp(1.3, 0.62, P.earPerk) + P.earFlick * 0.5;
-  ear(g, -2.7, -2.6, -Math.PI / 2 - spread, COL.coat, COL.earInner);
-  ear(g, 2.7, -2.6, -Math.PI / 2 + spread, COL.coat, COL.earInner);
-  ell(g, 0, -0.4, 4.9, 4.2, 0, COL.coat);                          // cranium
+  ear(g, -3.3 * W, -3.1, -Math.PI / 2 - spread + P.earF * 0.6, COL.coat, COL.earInner);
+  ear(g, 3.3 * W, -3.1, -Math.PI / 2 + spread - P.earN * 0.6, COL.coat, COL.earInner);
+  ell(g, 0, -0.4, 4.9 * W, 4.2, 0, COL.coat);                      // cranium
   g.fillStyle = COL.coat;                                            // muzzle coming toward us
-  g.beginPath(); g.moveTo(-3.9, 0.4); g.quadraticCurveTo(-3.2, 6.6, 0, 7.8);
-  g.quadraticCurveTo(3.2, 6.6, 3.9, 0.4); g.closePath(); g.fill();
-  ell(g, 0, -2.6, 2.5, 1.3, 0, COL.coatDeep);                       // forehead
-  for (const x of [-2.9, 2.9]) {
+  g.beginPath(); g.moveTo(-3.9 * W, 0.4); g.quadraticCurveTo(-3.2 * W, Y(6.6), 0, Y(7.8));
+  g.quadraticCurveTo(3.2 * W, Y(6.6), 3.9 * W, 0.4); g.closePath(); g.fill();
+  ell(g, 0, -2.6, 2.5 * W, 1.3, 0, COL.coatDeep);                   // forehead
+  for (const x of [-2.9 * F.eyes, 2.9 * F.eyes]) {
     ell(g, x, -0.1, 1.9, 1.8, 0, COL.cream);                         // eye rings
     if (P.eye > 0.3) {
       ell(g, x, 0, 1.45 + P.eyeWide * 0.3, Math.max(0.6, 1.6 * P.eye) + P.eyeWide * 0.3, 0, COL.eye);
       g.fillStyle = COL.white; g.fillRect(x - 0.95, -1.2, 0.8, 0.8);
     } else { g.fillStyle = COL.eye; g.fillRect(x - 1.3, -0.2, 2.6, 0.8); }
   }
-  ell(g, 0, 5.3, 2.3, 1.5, 0, COL.cream);                            // white muzzle
-  ell(g, 0, 7.8, 1.2, 0.7, 0, COL.cream);                            // chin
-  ell(g, 0, 3.4, 1.6, 0.6, 0, COL.cream);                            // white band behind nose
-  ell(g, 0, 5.6, 1.9, 1.3, 0, COL.nose);                             // big black nose
-  if (P.tongue > 0.08) ell(g, 0.3, 7.4 + P.tongue * 0.8, 0.9 + P.tongue * 0.4, 0.7 + P.tongue * 0.7, 0, COL.tongue);
+  ell(g, 0, Y(5.3), 2.3, 1.5, 0, COL.cream);                         // white muzzle
+  ell(g, 0, Y(7.8), 1.2, 0.7, 0, COL.cream);                         // chin
+  ell(g, 0, Y(3.9), 1.5, 0.4, 0, COL.cream);                         // pale band across the muzzle
+  ell(g, 0, Y(5.6), 1.9, 1.3, 0, COL.nose);                          // big black nose
+  if (P.tongue > 0.08) ell(g, 0.3, Y(7.4) + P.tongue * 0.8, 0.9 + P.tongue * 0.4, 0.7 + P.tongue * 0.7, 0, COL.tongue);
+  g.restore();
 }
 
-// Fixed spot pattern along the back (like a spring fawn).
-const SPOTS = (() => {
-  const r = mulberry32(7), out = [];
-  for (let x = 27; x <= 52; x += 2.3) out.push([x + r() * 0.5, 35.4 + r() * 0.6]);   // row by the spine
-  for (let x = 28; x <= 50; x += 2.7) out.push([x + r() * 0.8, 37.9 + r() * 0.8]);   // second row
-  for (let i = 0; i < 12; i++) out.push([28 + r() * 21, 40 + r() * 4]);               // flank scatter
-  return out;
-})();
-
-function bodyPath(g, dy) {
-  const q = (cx, cy, x, y) => g.quadraticCurveTo(cx, cy + dy, x, y + dy);
+// Torso outline built from the chosen torso variant (body space, centred on 41,41).
+function torsoGeom() {
+  const T = C.torso;
+  const rearX = 41 - T.L / 2, frontX = 41 + T.L / 2, topY = 41 - T.D / 2, botY = 41 + T.D / 2;
+  return { T, rearX, frontX, topY, botY, tail: [rearX + 0.6, topY + 2 + 4.5 * T.rump] };
+}
+function bodyPath(g, G) {
+  const { T, rearX, frontX, topY, botY } = G, [tx, ty] = G.tail;
+  const q = (cx, cy, x, y) => g.quadraticCurveTo(cx, cy, x, y);
   g.beginPath();
-  g.moveTo(24.5, 39.5 + dy);        // tail root, set low
-  q(24.6, 34.4, 30, 33.3);          // rump rounds down into the tail
-  q(36, 32.2, 42, 33.3);            // gently arched loin
-  q(48, 34.3, 52, 34.3);            // withers
-  q(57.6, 34.8, 57.9, 40.5);        // point of shoulder
-  q(58.3, 48.6, 51.5, 50.9);        // deep chest
-  q(46, 51.7, 40.5, 49.8);          // belly
-  q(35.5, 47.7, 32, 48);            // flank
-  q(25.3, 48.4, 23.9, 43.6);        // back of the thigh
-  q(23.5, 41.2, 24.5, 39.5);
+  g.moveTo(tx, ty);                                                         // tail root
+  q(rearX + 0.3, topY + 0.8 - T.arch * 0.2, rearX + 6, topY - T.arch * 0.35); // rump rounds down into the tail
+  q(rearX + T.L * 0.36, topY - T.arch, 42, topY - T.arch * 0.6);           // arched loin
+  q(frontX - 9, topY + 0.4, frontX - 5.5, topY + 0.7);                     // withers
+  q(frontX + 0.2, topY + 0.9, frontX + 0.3, topY + T.D * 0.42);            // point of shoulder
+  q(frontX + 0.6, botY + T.chest - 1.5, frontX - 6.5, botY + T.chest);     // chest
+  q(frontX - 12, botY + T.chest + 0.6, 40, botY - T.tuck * 0.4);           // belly
+  q(rearX + 11, botY - T.tuck * 1.1, rearX + 8, botY - T.tuck);            // flank
+  q(rearX + 1.2, botY - T.tuck + 0.4, rearX - 0.4, topY + T.D * 0.62);     // back of the thigh
+  q(rearX - 0.8, topY + T.D * 0.4, tx, ty);
   g.closePath();
 }
 
-const BODY_K = 0.95;   // torso scale — small body on long legs, like a young fawn
 function drawStanding(g, P) {
-  const K = BODY_K, dy = -P.bob + P.crouch * 4 - 6.6;
-  const B = (x, y) => [41 + (x - 41) * K, 41 + (y - 41) * K + dy];   // body-space → sprite
+  const G = torsoGeom(), { T, rearX, frontX, topY, botY } = G, Lg = C.legs;
+  const fNear = [frontX - 7, botY - 3.5], fFar = [frontX - 9, botY - 4.5];
+  const hNear = [rearX + 7.5, topY + T.D * 0.5], hFar = [rearX + 5.5, topY + T.D * 0.45];
+  // place the body so the front hooves touch the ground; hind legs are sized to match
+  const dy0 = 64.8 - fNear[1] - (Lg.fu + Lg.fl) * 0.998;
+  const kh = (64.8 - (hNear[1] + dy0)) / HIND_EXT;
+  const dy = dy0 - P.bob + P.crouch * 4;
+  const B = ([x, y]) => [x, y + dy];
 
   g.save();                                     // whole-body pitch (gallop rocking, leaps)
   g.translate(42, 46 + dy); g.rotate(P.pitch); g.translate(-42, -46 - dy);
 
-  frontLeg(g, ...B(48, 44.5), P.legs[0], COL.coatDark);   // far legs first
-  hindLeg(g, ...B(29.5, 40), P.legs[2], COL.coatDark);
-  tail(g, ...B(25, 38.2), P.tailRaise, P.tailWag);
+  frontLeg(g, ...B(fFar), P.legs[0], COL.coatDark);   // far legs first
+  hindLeg(g, ...B(hFar), P.legs[2], COL.coatDark, kh);
+  tail(g, ...B(G.tail), P.tailRaise, P.tailWag);
 
   g.save();
-  g.translate(41, 41 + dy); g.scale(K, K); g.translate(-41, -41);
-  bodyPath(g, 0); g.fillStyle = COL.coat; g.fill(); g.clip();
-  ell(g, 40, 34.4, 17, 3.3, 0, COL.coatDeep);    // dorsal band
-  ell(g, 45, 50.6, 9.5, 2.6, 0, COL.cream);      // belly
-  ell(g, 24.4, 42, 1.8, 4, 0, COL.cream);        // white rump
+  g.translate(0, dy);
+  bodyPath(g, G); g.fillStyle = COL.coat; g.fill(); g.clip();
+  ell(g, 40, topY + 1, T.L * 0.5, 3.1, 0, COL.coatDeep);                    // dorsal band
+  ell(g, frontX - 11, botY + T.chest - 0.3, T.L * 0.28, 2.4, 0, COL.cream); // belly
+  ell(g, rearX + 0.2, topY + T.D * 0.58, 1.8, 4, 0, COL.cream);             // white rump
   g.fillStyle = COL.white;
-  for (const [x, y] of SPOTS) g.fillRect(x, y, 1.4, 1.4);
+  for (const [x, y] of C.spots) g.fillRect(x, y, 1.4, 1.4);
   g.restore();
 
-  hindLeg(g, ...B(31.5, 41), P.legs[3], COL.coat);        // near legs over body
-  frontLeg(g, ...B(50.5, 45.5), P.legs[1], COL.coat);
+  hindLeg(g, ...B(hNear), P.legs[3], COL.coat, kh);   // near legs over body
+  frontLeg(g, ...B(fNear), P.legs[1], COL.coat);
 
   // Neck + head. Head angle is derived from the neck angle so it always follows it.
-  const [bx, by] = B(52.5, 37), n = P.neck, L = P.neckLen;
+  const [bx, by] = B([frontX - 4.5, topY + 2.2]), n = P.neck;
+  RIG.nbx = bx; RIG.nby = by + P.bob - P.crouch * 4;
+  let L = P.neckLen * C.neck.len / 15;
+  if (n > 0.9) L = Math.max(L, (60.5 - by) / Math.sin(n));   // grazing: always reach the grass
   const ux = Math.cos(n), uy = Math.sin(n), px = -uy, py = ux;
   const tx = bx + ux * L, ty = by + uy * L;
-  seg(g, bx, by, tx, ty, 7.6, 4.4, COL.coat);
+  seg(g, bx, by, tx, ty, C.neck.w0, C.neck.w1, COL.coat);
   if (P.back) {
     g.save(); g.translate(tx - 0.5, ty); g.scale(-1, 1); g.rotate(P.lookAng + P.tilt * 0.3);
     head(g, P);
     g.restore();
   } else if (P.stare) {
     ell(g, tx + 0.3, ty + 2.2, 1.6, 1.4, 0, COL.cream);     // white throat patch, seen head-on
-    g.save(); g.translate(tx + 0.8, ty - 2.5); g.rotate(P.tilt * 0.5); g.scale(1.3, 1.3); headFront(g, P); g.restore();
+    g.save(); g.translate(tx + 0.8, ty - 2.5); g.rotate(P.tilt * 0.5); headFront(g, P); g.restore();
   } else {
     ell(g, tx - ux * 3.5 + px * 1.9, ty - uy * 3.5 + py * 1.9, 3.2, 1.1, n, COL.cream); // pale throat
     g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt);
@@ -354,14 +491,14 @@ function drawStanding(g, P) {
 // Curled-up sleeping fawn (legs tucked, head resting back on the body).
 function drawCurled(g, P, t) {
   const b = Math.sin(t * 1.6) * 0.45;
-  tail(g, 27, 56, 0, 0);
+  tail(g, 27, 56, 0, P.tailWag);
   g.save();
   g.beginPath(); g.moveTo(44 + 17, 57.5); g.ellipse(44, 57.5 - b * 0.4, 17, 8.5 + b * 0.5, 0, 0, TAU);
   g.fillStyle = COL.coat; g.fill(); g.clip();
   ell(g, 44, 50.8, 16, 3.8, 0, COL.coatDeep);
   ell(g, 46, 65.2, 14, 2.5, 0, COL.cream);
   g.fillStyle = COL.white;
-  for (const [x, y] of SPOTS) g.fillRect(x + 5, y + 15.5 - b * 0.4, 1.15, 1.15);
+  for (const [x, y] of C.spots) g.fillRect(x + 5, y + 15.5 - b * 0.4, 1.15, 1.15);
   g.restore();
   g.strokeStyle = COL.coatDeep; g.lineWidth = 1;
   g.beginPath(); g.ellipse(33, 58.5, 8, 6.3, 0, -2.3, 1.2); g.stroke();   // hind thigh edge
@@ -378,7 +515,7 @@ function drawCurled(g, P, t) {
       g.save(); g.translate(tx - 0.5, ty); g.scale(-1, 1); g.rotate(P.lookAng); head(g, P); g.restore();
     } else if (P.stare) {
       ell(g, tx + 0.3, ty + 2.4, 1.7, 1.5, 0, COL.cream);
-      g.save(); g.translate(tx + 0.8, ty - 2.2); g.rotate(P.tilt * 0.5); g.scale(1.3, 1.3); headFront(g, P); g.restore();
+      g.save(); g.translate(tx + 0.8, ty - 2.2); g.rotate(P.tilt * 0.5); headFront(g, P); g.restore();
     } else {
       const n = clamp(P.neck, -1.6, -0.6);
       g.save(); g.translate(tx, ty); g.rotate(0.6 * n + 0.89 + P.tilt); head(g, P); g.restore();
@@ -803,6 +940,20 @@ function update(dt, t) {
   if (s === 'curious' || s === 'fed' || s === 'pet') deer.since = 0;
 
   if (auto) autoStep(dt); else manualStep(dt);
+  // ears swivel independently to listen: each picks a new direction now and then
+  const es = deer.ears || (deer.ears = { n: 0, f: 0, tn: 0, tf: 0, cd: 1 });
+  if ((es.cd -= dt) <= 0) {
+    const r = Math.random();
+    if (r < 0.4) es.tn = rand(-0.9, 0.45);           // just the near ear
+    else if (r < 0.8) es.tf = rand(-0.9, 0.45);      // just the far ear
+    else { es.tn = rand(-0.8, 0.4); es.tf = rand(-0.8, 0.4); }
+    if (Math.random() < 0.25) { es.tn = 0; es.tf = 0; }
+    es.cd = rand(0.8, 3.5);
+  }
+  es.n += (es.tn - es.n) * Math.min(1, dt * 12); es.f += (es.tf - es.f) * Math.min(1, dt * 12);
+  // every so often a quick burst of tail swishes to swat flies
+  deer.swat = Math.max(0, (deer.swat || 0) - dt);
+  if ((deer.swatCD = (deer.swatCD ?? rand(3, 8)) - dt) <= 0) { deer.swat = rand(0.5, 0.9); deer.swatCD = rand(4, 12); }
   updateHeadMode(dt);
   // airborne phase of each gallop stride
   if (deer.state === 'run') deer.z = Math.max(0, Math.sin(deer.phase * TAU)) * 5.5;
@@ -892,7 +1043,7 @@ function eatFlowerIfAny() {
 function basePose() {
   return {
     bob: 0, crouch: 0, neck: -1.05, neckLen: 15, tilt: 0, earPerk: 0.75, earFlick: 0,
-    eye: 1, eyeWide: 0, chew: 0, tongue: 0, pitch: 0, stare: 0, back: 0, lookAng: 0, tuck: false, awake: 0, tailRaise: 0.05, tailWag: 0, lie: 0,
+    eye: 1, eyeWide: 0, chew: 0, tongue: 0, pitch: 0, stare: 0, back: 0, earN: 0, earF: 0, lookAng: 0, tuck: false, awake: 0, tailRaise: 0.05, tailWag: 0, lie: 0,
     legs: [{ s: 0.04, f: 0 }, { s: 0.02, f: 0 }, { s: 0, f: 0 }, { s: -0.02, f: 0 }],
   };
 }
@@ -926,7 +1077,7 @@ function updateHeadMode(dt) {
 }
 
 function aimNeck(tx, ty) {
-  const bx = deer.x + deer.face * (50.7 - ANCHOR_X), by = deer.y - (GROUND - PAD - 31) - deer.z;
+  const bx = deer.x + deer.face * (RIG.nbx - ANCHOR_X), by = deer.y - (GROUND - PAD - RIG.nby) - deer.z;
   const dx = (tx - bx) * deer.face, dy = ty - by;
   return { n: clamp(Math.atan2(dy, Math.max(3, dx)) - 0.25, -1.5, 1.3), d: Math.hypot(dx, dy), dx, dy };
 }
@@ -1020,6 +1171,11 @@ function poseFor(t) {
   if (['stand', 'look', 'chew', 'chewlook'].includes(s)) {
     const b = butterflies.find(b => Math.hypot(b.x - deer.x, b.y - deer.y) < 70 && sign(b.x - deer.x) === deer.face);
     if (b) { P.neck = lerp(P.neck, clamp(aimNeck(b.x, b.y - b.alt).n, -1.5, -0.55), 0.7); P.earPerk = 1; }
+  }
+
+  if (s !== 'sleep' && deer.ears) { P.earN = deer.ears.n; P.earF = deer.ears.f; }
+  if (deer.swat > 0 && !['run', 'jump', 'play', 'sleep'].includes(s)) {
+    P.tailWag = Math.sin(t * 40) * 0.95; P.tailRaise = Math.max(P.tailRaise, 0.2);
   }
 
   // follow the cursor with her head while she's awake and standing in place
@@ -1237,6 +1393,60 @@ document.getElementById('hide').addEventListener('click', e => {
 });
 debugBox.addEventListener('change', e => e.target.blur());
 
+// ─────────────────────────── Design Lab ───────────────────────────
+const labEl = document.getElementById('lab');
+const LAB_POSES = {
+  side: ['stand', 1.0, {}],
+  front: ['stare', 1.0, {}],
+};
+// which views each part's thumbnails show
+const PART_VIEWS = { torso: ['side'], legs: ['side'], neck: ['side'], head: ['side'], face: ['front'], ears: ['side', 'front'], tail: ['side'] };
+const PREVIEW = [
+  ['stand', 1, {}], ['stare', 1, {}], ['walk', 1, { phase: 0.3 }], ['run', 1, { phase: 0.25 }],
+  ['graze', 1.1, {}], ['rest', 1, { lie: 1 }], ['sleep', 5, { lie: 1, tuck: true }],
+];
+const CROP = { x: 6, y: 8, w: 84, h: DH - 8 };
+function snapTo(canvas, x, [state, t, extra], sx = 3) {
+  window.deerDebug.renderState(state, t, extra);
+  const g = canvas.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.drawImage(dc, CROP.x, CROP.y, CROP.w, CROP.h, x, 0, CROP.w * sx, CROP.h * sx);
+}
+function labCode() { return PARTS.map(([k, , ab]) => ab + (SEL[k] + 1)).join(' · '); }
+function renderLab() {
+  document.getElementById('labCode').textContent = labCode();
+  const pv = document.getElementById('labPreview'); pv.innerHTML = '';
+  for (const pose of PREVIEW) {
+    const c = document.createElement('canvas'); c.width = CROP.w * 3; c.height = CROP.h * 3;
+    snapTo(c, 0, pose); pv.appendChild(c);
+  }
+  const rows = document.getElementById('labRows'); rows.innerHTML = '';
+  for (const [k, name, ab] of PARTS) {
+    const row = document.createElement('div'); row.className = 'labRow';
+    row.innerHTML = `<h3>${name} <span style="opacity:.6">(${ab}1–${ab}10)</span></h3>`;
+    const grid = document.createElement('div'); grid.className = 'labGrid';
+    const keep = SEL[k], views = PART_VIEWS[k];
+    for (let i = 0; i < 10; i++) {
+      SEL[k] = i; buildConfig();
+      const cell = document.createElement('button'); cell.className = 'labCell' + (i === keep ? ' sel' : '');
+      const c = document.createElement('canvas'); c.width = CROP.w * 3 * views.length; c.height = CROP.h * 3;
+      views.forEach((v, j) => snapTo(c, j * CROP.w * 3, LAB_POSES[v]));
+      cell.appendChild(c);
+      const num = document.createElement('b'); num.textContent = ab + (i + 1); cell.appendChild(num);
+      cell.addEventListener('click', () => { SEL[k] = i; buildConfig(); saveSel(); renderLab(); });
+      grid.appendChild(cell);
+    }
+    SEL[k] = keep; buildConfig();
+    row.appendChild(grid); rows.appendChild(row);
+  }
+}
+document.getElementById('labBtn').addEventListener('click', e => { labEl.classList.add('open'); renderLab(); e.currentTarget.blur(); });
+document.getElementById('labClose').addEventListener('click', () => labEl.classList.remove('open'));
+document.getElementById('labReset').addEventListener('click', () => { SEL = { ...DEFAULT_SEL }; buildConfig(); saveSel(); renderLab(); });
+document.getElementById('labCopy').addEventListener('click', () => {
+  navigator.clipboard?.writeText(labCode()).then(() => toast('Copied: ' + labCode()), () => toast(labCode()));
+});
+addEventListener('keydown', e => { if (e.key === 'Escape') labEl.classList.remove('open'); });
+
 // ─────────────────────────── loop ───────────────────────────
 addEventListener('resize', resize);
 resize();
@@ -1258,11 +1468,12 @@ requestAnimationFrame(frame);
 
 // Dev hook: window.deerDebug.pose('graze') etc. from the console
 window.deerDebug = {
-  deer, setAuto, doAction, sprite: dc, get auto() { return auto; },
+  deer, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
   // Render one pose synchronously (works even when rAF is paused): renderState('graze', 1.2, {lie: 1})
   renderState(state, t = 1, extra = {}) {
-    const saved = { state: deer.state, st: deer.st, lie: deer.lie, z: deer.z };
-    Object.assign(deer, { state, st: t, lie: 0 }, extra);
+    const saved = { state: deer.state, st: deer.st, lie: deer.lie, z: deer.z, phase: deer.phase,
+      ears: deer.ears, swat: deer.swat, tuck: deer.tuck, headMode: deer.headMode };
+    Object.assign(deer, { state, st: t, lie: 0, ears: { n: 0, f: 0, tn: 0, tf: 0, cd: 9 }, swat: 0, headMode: 'fwd' }, extra);
     const P = poseFor(t); P.lie = deer.lie >= 0.6 ? 1 : 0;
     renderDeer(P, t);
     Object.assign(deer, saved);
