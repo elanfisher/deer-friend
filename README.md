@@ -9,7 +9,17 @@ She isn't a sprite sheet: she's a small procedural rig (torso, neck, head, ears,
 tail) drawn onto a tiny canvas each frame, snapped to a palette and outlined, so every animation
 is just joint angles over time.
 
-## Run her on your Mac
+## Download
+
+Grab **[DeerFriend-mac.zip](https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriend-mac.zip)**
+from the latest release, unzip, drag **DeerFriend.app** into Applications, then right-click → **Open**
+the first time (it isn't notarized by Apple yet, so macOS asks once). Every release is built by
+GitHub Actions from this repo, virus-scanned, and published with a SHA-256 checksum and a signed
+build-provenance attestation (`gh attestation verify DeerFriend-mac.zip --repo elanfisher/deer-friend`).
+
+To publish a new release: `git tag v1.0.0 && git push origin v1.0.0`.
+
+## Build it yourself
 
 ```bash
 ./build_app.sh
