@@ -82,8 +82,9 @@ jobs:
         run: |
           cat > notes.md <<'EOF'
           **Install (Mac, macOS 13+):** download `DeerFriend-mac.zip`, unzip, and drag
-          **DeerFriend.app** into Applications. The first time, right-click it and choose **Open**
-          (it isn't notarized by Apple yet, so macOS asks once).
+          **DeerFriend.app** into Applications. It isn't notarized by Apple yet, so the first time
+          macOS will block it: open **System Settings → Privacy & Security**, scroll down, and click
+          **Open Anyway** (macOS 14 and earlier: right-click the app → **Open**). Only needed once.
 
           **Verify the download** (optional):
           `shasum -a 256 DeerFriend-mac.zip` should match `DeerFriend-mac.zip.sha256`, and

@@ -12,8 +12,9 @@ is just joint angles over time.
 ## Download
 
 Grab **[DeerFriend-mac.zip](https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriend-mac.zip)**
-from the latest release, unzip, drag **DeerFriend.app** into Applications, then right-click → **Open**
-the first time (it isn't notarized by Apple yet, so macOS asks once). Every release is built by
+from the latest release, unzip, and drag **DeerFriend.app** into Applications. It isn't notarized by
+Apple yet, so the first launch is blocked once: open **System Settings → Privacy & Security** and click
+**Open Anyway** (on macOS 14 and earlier, right-click the app → **Open**). Every release is built by
 GitHub Actions from this repo, virus-scanned, and published with a SHA-256 checksum and a signed
 build-provenance attestation (`gh attestation verify DeerFriend-mac.zip --repo elanfisher/deer-friend`).
 
