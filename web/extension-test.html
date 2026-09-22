@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- Dev harness: pretends to be a web page with the extension injected, so the extension path
+     can be tested without loading it into Chrome. Mirrors extension/content.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Extension harness</title>
+<style>
+  body { margin: 0; font: 16px/1.6 system-ui, sans-serif; background: #fff; color: #222; }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 120px; }
+  a { color: #1a6bd8; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>An ordinary web page</h1>
+    <p>The fawn below is drawn on a click-through overlay, exactly as the extension does it.
+      Text stays <a href="#">selectable and clickable</a> underneath her.</p>
+    <p>Buttons: <button id="ping">click me</button> <span id="pong"></span></p>
+  </main>
+
+  <script>
+    // === mirrors extension/content.js ===
+    const overlay = document.createElement('div');
+    overlay.id = 'deer-friend-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646';
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated';
+    overlay.appendChild(canvas);
+    document.documentElement.appendChild(overlay);
+    window.DEER_EXTENSION = true;
+    window.DEER_CANVAS = canvas;
+    window.DEER_START_PAUSED = true;
+    window.DEER_OVERLAY = overlay;
+
+    document.getElementById('ping').addEventListener('click', () => {
+      document.getElementById('pong').textContent = 'clicks still reach the page ✓';
+    });
+  </script>
+  <script src="deer.js"></script>
+  <script>
+    // === mirrors extension/settings.js, with the settings hard-coded ===
+    window.deerDesktop.setScale(1);
+    window.deerDesktop.setOptions({ friend: true, watch: true, shy: true });
+    window.deerDesktop.setPaused(false);
+  </script>
+</body>
+</html>
