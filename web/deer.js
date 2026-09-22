@@ -143,8 +143,14 @@ const PARTS = [
   ['face', 'Face (looking at you)', 'F'], ['ears', 'Ears', 'E'], ['tail', 'Tail', 'T'],
 ];
 const DEFAULT_SEL = { torso: 2, legs: 5, neck: 6, head: 5, face: 4, ears: 6, tail: 8 };   // B3 · L6 · N7 · H6 · F5 · E7 · T9
-let SEL = { ...DEFAULT_SEL };
-try { Object.assign(SEL, JSON.parse(localStorage.getItem('deerSel') || '{}')); } catch (e) {}
+const SEL = { ...DEFAULT_SEL };
+try {   // saved lab picks: take only the parts we know, and only valid variant numbers
+  const saved = JSON.parse(localStorage.getItem('deerSel') || '{}');
+  for (const [part] of PARTS) {
+    const pick = Number(saved?.[part]);
+    if (Number.isInteger(pick) && pick >= 0 && pick <= 9) SEL[part] = pick;
+  }
+} catch (e) { /* no saved picks, or storage unavailable */ }
 let C;
 function buildConfig() {
   C = {};
@@ -624,7 +630,8 @@ let deer = herd[0];
 let auto = true;
 
 // Options (the Mac app sets these from its menu; the browser panel has checkboxes)
-const OPT = Object.assign({ ignore: false, watch: true, follow: false, friend: false, shy: false }, window.DEER_OPTS || {});
+const OPT = { ignore: false, watch: true, follow: false, friend: false, shy: false };
+for (const key of Object.keys(OPT)) if (window.DEER_OPTS && key in window.DEER_OPTS) OPT[key] = !!window.DEER_OPTS[key];
 
 const LABELS = {
   stand: 'standing', look: 'looking around', walk: 'walking', run: 'running', jump: 'jumping',
@@ -1582,7 +1589,11 @@ function deskOxReset() { for (const d of herd) d.ox = null; }
 window.deerDesktop = {
   cursor(x, y, down) { mouse.cx = x; mouse.cy = y; mouse.inside = true; mouse.down = down; },
   setScale(s) { window.DEER_SCALE = s; resize(); },
-  setOptions(o) { Object.assign(OPT, o); setFriend(!!OPT.friend); syncOptionBoxes(); },
+  setOptions(o) {   // hosts (Mac menu, extension popup, prototype panel) flip these
+    for (const key of Object.keys(OPT)) if (key in Object(o)) OPT[key] = !!o[key];
+    setFriend(!!OPT.friend);
+    syncOptionBoxes();
+  },
   setPaused(p) {
     if (p === paused) return;
     paused = p;
