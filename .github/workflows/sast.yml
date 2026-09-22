@@ -3,8 +3,7 @@
 name: Static analysis
 
 on:
-  push:
-    branches: [main]
+  push: # every branch, so findings show up before a pull request is opened
   pull_request:
 
 permissions:
@@ -24,9 +23,22 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src \
             semgrep/semgrep@sha256:acaac22ffc7b7cc5926de0751b223bce0b2491c33d18422fa72f632c78d81198 \
-            semgrep scan --metrics=off --error \
+            semgrep scan --metrics=off --json --output semgrep.json \
               --config p/default --config p/javascript --config p/secrets --config p/github-actions
           # image: semgrep/semgrep:1.177.0
+
+      - name: Report findings
+        run: |
+          # One annotation per finding (visible on the run page), and fail if there are any.
+          python3 - <<'PY'
+          import json, sys
+          results = json.load(open("semgrep.json"))["results"]
+          for r in results:
+              msg = r["extra"]["message"].replace("\n", " ")[:400]
+              print(f"::error file={r['path']},line={r['start']['line']},title={r['check_id']}::{msg}")
+          print(f"{len(results)} finding(s)")
+          sys.exit(1 if results else 0)
+          PY
 
   zizmor:
     name: zizmor (workflow security)

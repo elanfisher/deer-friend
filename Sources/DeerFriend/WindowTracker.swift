@@ -48,6 +48,13 @@ enum WindowTracker {
                           bounds: rect)
     }
 
+    /// The normal window stacked immediately in front of `id`, if any.
+    static func windowDirectlyAbove(_ id: CGWindowID) -> CGWindowID? {
+        guard let above = CGWindowListCopyWindowInfo([.optionOnScreenAboveWindow], id) as? [[String: Any]] else { return nil }
+        // listed front-to-back, so the last normal-layer entry is the one just above it
+        return above.last { ($0[kCGWindowLayer as String] as? Int) == 0 }?[kCGWindowNumber as String] as? CGWindowID
+    }
+
     /// Converts the window's top edge from Quartz (y-down) to AppKit (y-up) screen coordinates.
     static func appKitTopEdge(of bounds: CGRect) -> CGFloat {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0

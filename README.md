@@ -9,33 +9,41 @@ She isn't a sprite sheet: she's a small procedural rig (torso, neck, head, ears,
 tail) drawn onto a tiny canvas each frame, snapped to a palette and outlined, so every animation
 is just joint angles over time.
 
-## Run her on your Mac
+## Download
+
+| | Link | Notes |
+| --- | --- | --- |
+| **Mac** (13+) | [DeerFriend-mac.dmg](https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriend-mac.dmg) | Drag her into Applications. She lives in the menu bar. |
+| **Windows** (10/11) | [DeerFriendSetup.exe](https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriendSetup.exe) | She lives in the notification area. |
+| **Chrome / Edge** | [deer-friend-extension.zip](https://github.com/elanfisher/deer-friend/releases/latest/download/deer-friend-extension.zip) | She wanders along the bottom of web pages. |
+
+**New to this? Follow [INSTALL.md](INSTALL.md) or the [download page](https://elanfisher.github.io/deer-friend/),
+which detects your platform and walks you through it step by step.**
+
+Neither app is signed by Apple or Microsoft yet, so each shows one first-run warning:
+on **Mac**, open System Settings → Privacy & Security and click **Open Anyway**;
+on **Windows**, click **More info → Run anyway**. For the extension: unzip it, then
+`chrome://extensions` → **Developer mode** → **Load unpacked** → pick the folder.
+
+Every download is built by GitHub Actions from this repo, virus-scanned with ClamAV, and
+published with a SHA-256 checksum and a signed build-provenance attestation
+(`gh attestation verify <file> --repo elanfisher/deer-friend`).
+
+To publish a new release: `git tag v1.0.0 && git push origin v1.0.0`.
+
+## Build it yourself
 
 ```bash
-./build_app.sh
-open DeerFriend.app
+./build_app.sh                 # Mac app          → DeerFriend.app
+./scripts/make_dmg.sh          # Mac disk image   → dist/DeerFriend-mac.dmg
+./scripts/build_extension.sh   # Chrome extension → dist/deer-friend-extension.zip
+./scripts/make_icons.sh        # regenerate every icon from her own sprite
+cd windows && dotnet build     # Windows app (works from any OS)
 ```
 
-Requires macOS 13+ and the Xcode command-line tools (`xcode-select --install`). To keep her
-around, move `DeerFriend.app` into `/Applications`, then turn on **Launch at Login** in her menu.
-
-Everything is controlled from the 🦌 in the menu bar:
-
-| Menu item | What it does |
-| --- | --- |
-| Hide Deer / Show Deer | Tucks her away (and stops animating) until you bring her back |
-| Friend Mode | Adds a second fawn: they play together, run around, nap side by side, or ignore each other |
-| Auto Mode (Ignore Cursor) | She just lives her life and pays no attention to the cursor |
-| Watch the Cursor | Her head follows the cursor, even swivelling back over her shoulder |
-| Follow the Cursor | She walks (or runs) to stay next to the cursor |
-| Live On | Bottom of the screen, or perched on top of any window (she rides along when you move it) |
-| Display / Size | Which screen, and Small / Medium / Large |
-| Launch at Login | Start her automatically when you log in |
-
-Her window is click-through, so she never gets in the way of your clicks.
-
-**Petting and feeding:** move the cursor slowly up to her and she gets curious; hover near her
-to pet her (hearts), or hold the mouse button down by her mouth to feed her a clover.
+The Mac app needs macOS 13+ and the Xcode command-line tools (`xcode-select --install`);
+the Windows app needs .NET 8. To keep her around, turn on **Launch at Login** (Mac) or
+**Start with Windows** in her menu.
 
 ## Browser prototype + Design Lab
 

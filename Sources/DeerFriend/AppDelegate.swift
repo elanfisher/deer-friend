@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         win.backgroundColor = .clear
         win.hasShadow = false
         win.ignoresMouseEvents = true // fully click-through — never blocks the desktop or other apps
-        win.level = .floating
+        win.level = option(.onTop) ? .floating : .normal   // .normal lets other windows cover her
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         win.isReleasedWhenClosed = false
 
@@ -138,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard let id = perchedWindowID else { return }
         guard let found = WindowTracker.lookup(id) else { perch(on: nil); return }   // window closed
         place(found.onScreen ? perchFrame(found.bounds) : stripFrame())               // minimized: wait at the Dock line
+        // Sit directly above her window in the stacking order, so windows in front of it cover her too.
+        if found.onScreen && !option(.onTop) && WindowTracker.windowDirectlyAbove(id) != CGWindowID(window.windowNumber) {
+            window.order(.above, relativeTo: Int(id))
+        }
     }
 
     func setDisplay(_ name: String) {
@@ -157,6 +161,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func setOption(_ key: DeerOption, _ on: Bool) {
         defaults.set(on, forKey: "opt." + key.rawValue)
+        if key == .onTop {
+            window.level = on ? .floating : .normal
+            window.orderFrontRegardless()
+            return
+        }
         js("deerDesktop.setOptions({\(key.rawValue): \(on)})")
     }
 

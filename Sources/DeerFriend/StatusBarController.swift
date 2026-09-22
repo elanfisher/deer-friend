@@ -18,7 +18,7 @@ protocol DeerMenuHost: AnyObject {
 
 /// Toggles shared with the page (web/index.html reads them as OPT.<rawValue>).
 enum DeerOption: String, CaseIterable {
-    case friend, ignore, watch, follow
+    case friend, ignore, watch, follow, shy, onTop
 
     var title: String {
         switch self {
@@ -26,6 +26,8 @@ enum DeerOption: String, CaseIterable {
         case .ignore: return "Auto Mode (Ignore Cursor)"
         case .watch: return "Watch the Cursor"
         case .follow: return "Follow the Cursor"
+        case .shy: return "Move Out of the Way When Hovered"
+        case .onTop: return "Show in Front of Windows"
         }
     }
 
@@ -45,7 +47,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.host = host
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        statusItem.button?.title = "🦌"
+        if let url = Bundle.main.url(forResource: "MenuBarDeer", withExtension: "png"),
+           let deer = NSImage(contentsOf: url) {
+            deer.size = NSSize(width: 18 * deer.size.width / deer.size.height, height: 18)   // menu-bar height
+            statusItem.button?.image = deer                 // her own sprite, in colour
+        } else {
+            statusItem.button?.title = "🦌"
+        }
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -66,7 +74,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(toggle(.friend))
         menu.addItem(.separator())
 
-        for option in [DeerOption.ignore, .watch, .follow] {
+        for option in [DeerOption.ignore, .watch, .follow, .shy] {
             let entry = toggle(option)
             if option != .ignore && host.option(.ignore) { entry.isEnabled = false }   // auto mode overrides these
             menu.addItem(entry)
@@ -74,6 +82,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(submenu("Live On", homeItems(host)))
+        menu.addItem(toggle(.onTop))   // off: other windows can cover her
         menu.addItem(submenu("Display", NSScreen.screens.map { screen in
             checked(screen.localizedName, screen.localizedName == host.currentDisplayName) { host.setDisplay(screen.localizedName) }
         }))

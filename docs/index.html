@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deer Friend — a little fawn for your desktop</title>
+<meta name="description" content="A pixel-art fawn who wanders along the bottom of your screen, grazes, plays and watches your cursor. Free for Mac, Windows, Chrome and Edge.">
+<link rel="icon" href="icon.png">
+<style>
+  :root {
+    --ink: #3b2317; --paper: #fbf3e4; --paper-2: #f4e8d2;
+    --accent: #c47b3c; --green: #5d9a42; --sky: #bfe3f5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 20px 220px; background: var(--paper); color: var(--ink);
+    font: 16px/1.65 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  header { text-align: center; padding: 48px 0 8px; }
+  header img { width: 128px; height: 128px; image-rendering: pixelated; }
+  h1 { font-size: 34px; margin: 12px 0 6px; letter-spacing: -.5px; }
+  .sub { font-size: 18px; opacity: .8; margin: 0 auto; max-width: 540px; }
+  h2 { font-size: 20px; margin: 36px 0 10px; }
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 26px; }
+  .card {
+    background: var(--paper-2); border: 2px solid rgba(59,35,23,.18); border-radius: 16px;
+    padding: 18px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card.you { border-color: var(--accent); box-shadow: 0 6px 0 rgba(196,123,60,.22); }
+  .card h3 { margin: 0; font-size: 17px; }
+  .card p { margin: 0; font-size: 14px; opacity: .8; flex: 1; }
+  .btn {
+    display: inline-block; text-align: center; text-decoration: none; font-weight: 600;
+    background: var(--green); color: #fff; padding: 11px 14px; border-radius: 11px;
+  }
+  .btn:hover { filter: brightness(1.07); }
+  .btn.alt { background: var(--accent); }
+  .yours { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 700; }
+  ol { padding-left: 20px; }
+  li { margin: 7px 0; }
+  details {
+    background: var(--paper-2); border-radius: 14px; padding: 12px 16px; margin: 10px 0;
+    border: 2px solid rgba(59,35,23,.12);
+  }
+  summary { cursor: pointer; font-weight: 600; }
+  code {
+    background: #fff; border: 1px solid rgba(59,35,23,.2); border-radius: 6px;
+    padding: 1px 6px; font-size: 13px;
+  }
+  .warn { background: #fff5e2; border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 0 10px 10px 0; }
+  footer { text-align: center; margin-top: 44px; font-size: 14px; opacity: .75; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="icon.png" alt="Deer Friend">
+    <h1>Deer Friend</h1>
+    <p class="sub">A little pixel-art fawn who lives at the bottom of your screen. She grazes,
+      plays, naps, watches your cursor — and lets you pet and feed her.</p>
+  </header>
+
+  <div class="cards">
+    <div class="card" id="card-mac">
+      <div class="yours" hidden>You're on a Mac</div>
+      <h3>🍎 Mac</h3>
+      <p>macOS 13 or newer. She lives in your menu bar.</p>
+      <a class="btn" href="https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriend-mac.dmg">Download for Mac</a>
+    </div>
+    <div class="card" id="card-win">
+      <div class="yours" hidden>You're on Windows</div>
+      <h3>🪟 Windows</h3>
+      <p>Windows 10 or 11. She lives in the notification area.</p>
+      <a class="btn" href="https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriendSetup.exe">Download for Windows</a>
+    </div>
+    <div class="card" id="card-ext">
+      <h3>🌐 Chrome / Edge</h3>
+      <p>She wanders along the bottom of web pages instead.</p>
+      <a class="btn alt" href="https://github.com/elanfisher/deer-friend/releases/latest/download/deer-friend-extension.zip">Download the extension</a>
+    </div>
+  </div>
+
+  <h2>Installing her</h2>
+
+  <details id="steps-mac" open>
+    <summary>🍎 Mac — about a minute</summary>
+    <ol>
+      <li>Open the downloaded <code>DeerFriend-mac.dmg</code> (double-click it in Downloads).</li>
+      <li>A window opens with the deer app and an Applications folder. <strong>Drag the deer onto
+        the Applications folder.</strong></li>
+      <li>Open <strong>Applications</strong> and double-click <strong>DeerFriend</strong>.</li>
+      <li>macOS says it "cannot verify the developer". That's expected — I'm not a paying Apple
+        developer yet. Click <strong>Done</strong>, then open
+        <strong> System Settings → Privacy &amp; Security</strong>, scroll down to where it mentions
+        DeerFriend, and click <strong>Open Anyway</strong>. You only do this once.</li>
+      <li>Look for the little deer in your menu bar, at the top-right of the screen. That's her menu:
+        size, friend mode, hide her, start her at login.</li>
+    </ol>
+    <p class="warn"><strong>Nothing appears?</strong> She starts at the bottom of your screen, above
+      the Dock. If you have more than one display, use the menu bar deer → <strong>Display</strong>
+      to move her.</p>
+  </details>
+
+  <details id="steps-win">
+    <summary>🪟 Windows — about a minute</summary>
+    <ol>
+      <li>Run the downloaded <code>DeerFriendSetup.exe</code> (double-click it in Downloads).</li>
+      <li>Windows shows a blue <strong>"Windows protected your PC"</strong> box, because the app
+        isn't signed by a paid certificate. Click <strong>More info</strong>, then
+        <strong>Run anyway</strong>.</li>
+      <li>Click through the installer. Tick <strong>"Start Deer Friend when I sign in"</strong> if
+        you want her there every day.</li>
+      <li>She appears at the bottom of your screen. Her icon is in the notification area
+        (bottom-right, you may need to click the <strong>^</strong> arrow to see it) — that's her menu.</li>
+    </ol>
+    <p class="warn"><strong>"WebView2 is missing"?</strong> Install Microsoft's free
+      <a href="https://go.microsoft.com/fwlink/p/?LinkId=2124703">WebView2 runtime</a>, then start
+      Deer Friend again. Windows 11 and most Windows 10 PCs already have it.</p>
+  </details>
+
+  <details id="steps-ext">
+    <summary>🌐 Chrome / Edge — about two minutes</summary>
+    <ol>
+      <li>Unzip the downloaded <code>deer-friend-extension.zip</code>. On Mac, double-click it; on
+        Windows, right-click → <strong>Extract All</strong>. You'll get a
+        <strong>deer-friend-extension</strong> folder — keep it somewhere you won't delete, like
+        Documents.</li>
+      <li>In your browser, go to <code>chrome://extensions</code> (Edge:
+        <code>edge://extensions</code>).</li>
+      <li>Turn on <strong>Developer mode</strong> (top-right in Chrome, left sidebar in Edge).</li>
+      <li>Click <strong>Load unpacked</strong> and pick that folder.</li>
+      <li>Open any web page — she'll be along the bottom. Click her icon in the toolbar for
+        settings.</li>
+    </ol>
+    <p class="warn">Chrome may ask you to keep Developer mode on. That's normal for an extension
+      that isn't in the Chrome Web Store yet.</p>
+  </details>
+
+  <h2>Playing with her</h2>
+  <ul>
+    <li><strong>Move slowly toward her</strong> and she gets curious and watches your cursor.</li>
+    <li><strong>Hover near her</strong> to pet her — little hearts appear.</li>
+    <li><strong>Hold the mouse button down by her mouth</strong> to feed her a clover.</li>
+    <li>Her menu has <strong>Friend Mode</strong>: a second fawn to play, run and nap with her.</li>
+    <li>She never blocks your clicks — you can click straight through her.</li>
+  </ul>
+
+  <h2>Is it safe?</h2>
+  <p>Every download is built in public by GitHub from
+    <a href="https://github.com/elanfisher/deer-friend">this open-source code</a>, virus-scanned
+    with ClamAV, and published with a checksum and a signed record of exactly which code it came
+    from. The app makes no network connections and needs no special permissions.</p>
+
+  <footer>
+    Made by <a href="https://elanfisher.com">Elan Fisher</a> ·
+    <a href="https://github.com/elanfisher/deer-friend">Source on GitHub</a> ·
+    <a href="https://github.com/elanfisher/deer-friend/releases/latest">All downloads</a>
+  </footer>
+</main>
+
+<script>
+  // Highlight whichever platform you're on, and open its steps first.
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform + navigator.userAgent);
+  const win = /Win/.test(navigator.platform + navigator.userAgent);
+  if (mac || win) {
+    const which = mac ? 'mac' : 'win';
+    const card = document.getElementById('card-' + which);
+    card.classList.add('you');
+    card.querySelector('.yours').hidden = false;
+    card.parentNode.prepend(card);
+    for (const id of ['mac', 'win', 'ext']) {
+      document.getElementById('steps-' + id).open = (id === which);
+    }
+  }
+
+  // And here she is, wandering along the bottom of this page.
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999';
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated';
+  overlay.appendChild(canvas);
+  document.documentElement.appendChild(overlay);
+  window.DEER_EXTENSION = true;
+  window.DEER_CANVAS = canvas;
+  window.DEER_OPTS = { watch: true, friend: true, shy: true };
+</script>
+<script src="deer.js"></script>
+</body>
+</html>
