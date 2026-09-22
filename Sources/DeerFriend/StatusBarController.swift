@@ -47,7 +47,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.host = host
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        statusItem.button?.title = "🦌"
+        if let url = Bundle.main.url(forResource: "MenuBarDeer", withExtension: "png"),
+           let deer = NSImage(contentsOf: url) {
+            deer.size = NSSize(width: 18 * deer.size.width / deer.size.height, height: 18)   // menu-bar height
+            statusItem.button?.image = deer                 // her own sprite, in colour
+        } else {
+            statusItem.button?.title = "🦌"
+        }
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
