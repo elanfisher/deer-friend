@@ -39,7 +39,9 @@ Everything is controlled from the 🦌 in the menu bar:
 | Auto Mode (Ignore Cursor) | She just lives her life and pays no attention to the cursor |
 | Watch the Cursor | Her head follows the cursor, even swivelling back over her shoulder |
 | Follow the Cursor | She walks (or runs) to stay next to the cursor |
+| Move Out of the Way When Hovered | She fades see-through and trots aside when your cursor lands on her |
 | Live On | Bottom of the screen, or perched on top of any window (she rides along when you move it) |
+| Show in Front of Windows | On: always drawn above other windows. Off: other windows can cover her (when perched, she stays just above her window) |
 | Display / Size | Which screen, and Small / Medium / Large |
 | Launch at Login | Start her automatically when you log in |
 

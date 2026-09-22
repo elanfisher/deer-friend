@@ -27,7 +27,7 @@ enum DeerOption: String, CaseIterable {
         case .watch: return "Watch the Cursor"
         case .follow: return "Follow the Cursor"
         case .shy: return "Move Out of the Way When Hovered"
-        case .onTop: return "Keep on Top of Windows"
+        case .onTop: return "Show in Front of Windows"
         }
     }
 
@@ -75,9 +75,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        menu.addItem(toggle(.onTop))
-
         menu.addItem(submenu("Live On", homeItems(host)))
+        menu.addItem(toggle(.onTop))   // off: other windows can cover her
         menu.addItem(submenu("Display", NSScreen.screens.map { screen in
             checked(screen.localizedName, screen.localizedName == host.currentDisplayName) { host.setDisplay(screen.localizedName) }
         }))
