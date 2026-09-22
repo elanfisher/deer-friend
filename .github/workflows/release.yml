@@ -152,6 +152,10 @@ jobs:
           cat > notes.md <<'EOF'
           A little pixel-art fawn who lives on your desktop — or in your browser.
 
+          **New to this?** The [download page](https://elanfisher.github.io/deer-friend/) picks the
+          right file for your computer and walks you through it. Step-by-step instructions for every
+          platform are in [INSTALL.md](https://github.com/elanfisher/deer-friend/blob/main/INSTALL.md).
+
           ### Mac (macOS 13+)
           Download **DeerFriend-mac.dmg**, open it and drag **DeerFriend.app** into Applications.
           It isn't notarized by Apple yet, so the first launch is blocked once: open
