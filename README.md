@@ -17,6 +17,9 @@ is just joint angles over time.
 | **Windows** (10/11) | [DeerFriendSetup.exe](https://github.com/elanfisher/deer-friend/releases/latest/download/DeerFriendSetup.exe) | She lives in the notification area. |
 | **Chrome / Edge** | [deer-friend-extension.zip](https://github.com/elanfisher/deer-friend/releases/latest/download/deer-friend-extension.zip) | She wanders along the bottom of web pages. |
 
+**New to this? Follow [INSTALL.md](INSTALL.md) or the [download page](https://elanfisher.github.io/deer-friend/),
+which detects your platform and walks you through it step by step.**
+
 Neither app is signed by Apple or Microsoft yet, so each shows one first-run warning:
 on **Mac**, open System Settings → Privacy & Security and click **Open Anyway**;
 on **Windows**, click **More info → Run anyway**. For the extension: unzip it, then
