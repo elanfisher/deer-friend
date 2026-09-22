@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms> <!-- for the tray icon only -->
+    <Nullable>enable</Nullable>
+    <AssemblyName>DeerFriend</AssemblyName>
+    <RootNamespace>DeerFriend</RootNamespace>
+    <ApplicationIcon>deer.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Deer Friend</Product>
+    <Company>elanfisher</Company>
+    <Description>A little pixel-art fawn who lives on your desktop.</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+  <!-- The deer herself: the same page the Mac app and the extension use. -->
+  <ItemGroup>
+    <Content Include="deer.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\web\index.html" Link="web\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\web\deer.js" Link="web\deer.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

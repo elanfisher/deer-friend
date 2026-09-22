@@ -4,3 +4,6 @@ DeerFriend.app/
 .DS_Store
 extension/deer.js
 dist/
+windows/bin/
+windows/obj/
+windows/publish/
