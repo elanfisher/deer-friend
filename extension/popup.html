@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #3b2317; --paper: #fbf3e4; --paper-2: #f1e3c8; --green: #5d9a42; }
+  body {
+    margin: 0; width: 230px; padding: 12px;
+    background: var(--paper); color: var(--ink);
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  h1 { font-size: 13px; margin: 0 0 10px; display: flex; align-items: center; gap: 7px; }
+  h1 img { width: 22px; height: 22px; image-rendering: pixelated; }
+  label { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
+  hr { border: 0; border-top: 2px solid var(--ink); opacity: .25; margin: 10px 0; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  select { font: inherit; border: 2px solid var(--ink); background: var(--paper-2); padding: 2px 4px; }
+  .hint { opacity: .7; margin-top: 10px; font-size: 11px; }
+</style>
+</head>
+<body>
+  <h1><img src="icons/icon48.png" alt=""> Deer Friend</h1>
+
+  <label><input type="checkbox" id="enabled"> Show her on web pages</label>
+  <hr>
+  <label><input type="checkbox" id="friend"> Friend mode (two fawns)</label>
+  <label><input type="checkbox" id="shy"> Move out of the way when hovered</label>
+  <label><input type="checkbox" id="watch"> Watch the cursor</label>
+  <label><input type="checkbox" id="follow"> Follow the cursor</label>
+  <label><input type="checkbox" id="ignore"> Ignore the cursor</label>
+  <hr>
+  <div class="row">
+    <span>Size</span>
+    <select id="scale">
+      <option value="1">Small</option>
+      <option value="1.5">Medium</option>
+      <option value="2">Large</option>
+    </select>
+  </div>
+  <p class="hint">Changes apply to open tabs right away. Reload a tab if she doesn't appear.</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

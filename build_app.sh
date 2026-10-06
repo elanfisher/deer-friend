@@ -13,8 +13,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN_PATH/DeerFriend" "$APP/Contents/MacOS/DeerFriend"
 cp "Resources/Info.plist" "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/MenuBarDeer.png "$APP/Contents/Resources/MenuBarDeer.png"
 mkdir -p "$APP/Contents/Resources/web"
-cp web/index.html "$APP/Contents/Resources/web/index.html"
+cp web/index.html web/deer.js "$APP/Contents/Resources/web/"
 
 # Ad-hoc sign so macOS treats it as a stable app (needed for Launch at Login).
 codesign --force --sign - "$APP" >/dev/null

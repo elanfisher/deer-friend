@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- Dev harness: boots the deer exactly the way the Mac app does (desktop mode, options set
+     before the page's script runs), so start-up problems show up in a normal browser.
+     Add ?ledges to also send a few fake window tops. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App harness</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #2f3b47; overflow: hidden; }
+  canvas#world, canvas.deerCanvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
+  .fakewin { position: fixed; background: #e9e6df; border-radius: 10px; border-top: 22px solid #cfcac0; }
+</style>
+</head>
+<body>
+<canvas id="world"></canvas>
+<script>
+  window.DEER_DESKTOP = true;
+  window.DEER_SCALE = 1;
+  window.DEER_OPTS = { friend: true, ignore: false, watch: true, follow: false, shy: false, onTop: false, props: true };
+  window.__errors = [];
+  addEventListener('error', e => window.__errors.push(e.message + ' @' + e.lineno));
+</script>
+<script src="deer.js"></script>
+<script>
+  if (/[?&]ledges\b/.test(location.search)) {
+    const W = innerWidth, H = innerHeight;
+    const wins = [
+      { id: 'w1:0', x: 80, y: H - 330, w: 380, h: 260 },
+      { id: 'w2:0', x: 520, y: H - 470, w: 300, h: 420 },
+    ];
+    for (const w of wins) {
+      const el = document.createElement('div');
+      el.className = 'fakewin';
+      Object.assign(el.style, { left: w.x + 'px', top: w.y + 'px', width: w.w + 'px', height: w.h + 'px', zIndex: -1 });
+      document.body.appendChild(el);
+    }
+    deerDesktop.setLedges([...wins.map(w => ({ id: w.id, x0: w.x, x1: w.x + w.w, y: w.y })),
+      { id: 'ground', x0: 0, x1: W, y: H - 4 }]);
+  }
+</script>
+</body>
+</html>

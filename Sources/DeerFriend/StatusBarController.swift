@@ -7,6 +7,8 @@ protocol DeerMenuHost: AnyObject {
     var launchAtLogin: Bool { get }
     var currentDisplayName: String { get }
     var perchedWindowID: CGWindowID? { get }
+    var home: String { get }
+    var isRoaming: Bool { get }
     func option(_ key: DeerOption) -> Bool
     func setOption(_ key: DeerOption, _ on: Bool)
     func setScale(_ scale: Double)
@@ -14,11 +16,12 @@ protocol DeerMenuHost: AnyObject {
     func setLaunchAtLogin(_ on: Bool)
     func setDisplay(_ name: String)
     func perch(on window: WindowInfo?)
+    func setHome(_ home: String)
 }
 
 /// Toggles shared with the page (web/index.html reads them as OPT.<rawValue>).
 enum DeerOption: String, CaseIterable {
-    case friend, ignore, watch, follow
+    case friend, ignore, watch, follow, shy, onTop, props
 
     var title: String {
         switch self {
@@ -26,10 +29,13 @@ enum DeerOption: String, CaseIterable {
         case .ignore: return "Auto Mode (Ignore Cursor)"
         case .watch: return "Watch the Cursor"
         case .follow: return "Follow the Cursor"
+        case .shy: return "Move Out of the Way When Hovered"
+        case .onTop: return "Show in Front of Windows"
+        case .props: return "Grass Patches to Rest On"
         }
     }
 
-    var defaultValue: Bool { self == .watch }
+    var defaultValue: Bool { self == .watch || self == .props }
 }
 
 /// The 🦌 menu-bar item — the only chrome this app has, since the deer's own window is
@@ -45,7 +51,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.host = host
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        statusItem.button?.title = "🦌"
+        if let url = Bundle.main.url(forResource: "MenuBarDeer", withExtension: "png"),
+           let deer = NSImage(contentsOf: url) {
+            deer.size = NSSize(width: 18 * deer.size.width / deer.size.height, height: 18)   // menu-bar height
+            statusItem.button?.image = deer                 // her own sprite, in colour
+        } else {
+            statusItem.button?.title = "🦌"
+        }
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -64,9 +76,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             host.setDeerHidden(!host.isDeerHidden)
         })
         menu.addItem(toggle(.friend))
+        menu.addItem(toggle(.props))
         menu.addItem(.separator())
 
-        for option in [DeerOption.ignore, .watch, .follow] {
+        for option in [DeerOption.ignore, .watch, .follow, .shy] {
             let entry = toggle(option)
             if option != .ignore && host.option(.ignore) { entry.isEnabled = false }   // auto mode overrides these
             menu.addItem(entry)
@@ -74,6 +87,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(submenu("Live On", homeItems(host)))
+        let onTop = toggle(.onTop)   // off: other windows can cover her
+        if host.isRoaming {          // roaming she's always in front, but only stands on visible edges
+            onTop.isEnabled = false
+            onTop.toolTip = "When she roams the whole screen she's always drawn in front of windows."
+        }
+        menu.addItem(onTop)
         menu.addItem(submenu("Display", NSScreen.screens.map { screen in
             checked(screen.localizedName, screen.localizedName == host.currentDisplayName) { host.setDisplay(screen.localizedName) }
         }))
@@ -88,7 +107,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// "Bottom of Screen" plus every normal on-screen window she could stand on top of.
     private func homeItems(_ host: DeerMenuHost) -> [NSMenuItem] {
-        var items = [checked("Bottom of Screen", host.perchedWindowID == nil) { host.perch(on: nil) }]
+        var items = [
+            checked("Whole Screen (hop between windows)", host.isRoaming) { host.setHome("screen") },
+            checked("Bottom of Screen", host.perchedWindowID == nil && host.home == "bottom") { host.setHome("bottom") },
+        ]
         let windows = WindowTracker.listWindows()
         if !windows.isEmpty { items.append(.separator()) }
         for w in windows.prefix(20) {
