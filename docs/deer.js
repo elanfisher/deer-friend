@@ -486,11 +486,32 @@ const canvas = window.DEER_CANVAS || document.getElementById('world');
 let wg = canvas.getContext('2d');
 let SCALE = 4, W = 320, H = 180, HORIZON = 60;
 const bg = document.createElement('canvas');
-const DESK_CW = 220;   // desktop canvas width (logical px)
+const DESK_CW = 220, DESK_CH = 170;   // each deer's desktop canvas (logical px), slides with her
 let tufts = [], flowers = [], clouds = [], butterflies = [];
 const FLOWER_COLS = ['#f2c94c', '#e8833a', '#fbf8ef', '#b48ad6', '#f2c94c'];
 
+// On the desktop the Mac app can send "ledges": the visible top edges of your windows plus the
+// ground (the line above the Dock). Each deer stands on one, and leaps between them.
+let LEDGES = null;                                   // [{ id, x0, x1, y, prop? }] in logical px, or null
+let hostLedges = null;                               // window tops + ground from the Mac app (logical px)
+let PROPS = [];                                      // little things on the ground to hop on and over
+let propCanvas = null, propKey = '';                // their (static) desktop canvas
+const PROP_KINDS = [
+  { kind: 'stump', w: 18, h: 12 }, { kind: 'rock', w: 17, h: 8 },
+  { kind: 'log', w: 30, h: 9 }, { kind: 'crate', w: 15, h: 14 },
+];
+const ledgeById = id => (LEDGES ? LEDGES.find(l => l.id === id) || null : null);
+const groundLedge = () => ledgeById('ground') || (LEDGES && LEDGES[LEDGES.length - 1]) || null;
+const ledgeOf = d => ledgeById(d.ledgeId) || groundLedge();
+const LEDGE_MARGIN = 14;                             // keep her hooves this far in from the edges
+
 function bounds() {
+  if (LEDGES) {
+    const l = ledgeOf(deer);
+    if (l.prop) { const c = (l.x0 + l.x1) / 2; return { x0: c, x1: c, y0: l.y, y1: l.y }; }   // stand in the middle
+    const x0 = l.x0 + LEDGE_MARGIN, x1 = Math.max(x0, l.x1 - LEDGE_MARGIN);
+    return { x0, x1, y0: l.y, y1: l.y };
+  }
   if (DESK) return { x0: 30, x1: W - 30, y0: H - 7, y1: H - 4 };   // a thin ground line along the screen
   return { x0: 24, x1: W - 24, y0: HORIZON + 42, y1: H - 5 };
 }
@@ -557,23 +578,25 @@ function resize() {
   HORIZON = DESK ? 0 : Math.round(H * 0.34);
   // desktop: each deer gets a small canvas that slides along with her, so only tiny textures repaint
   for (const cv of [canvas, ...herd.slice(1).map(d => d.cv)]) sizeCanvas(cv);
-  for (const d of herd) d.ox = null;
+  for (const d of herd) { d.ox = null; d.oy = null; }
+  if (DESK && typeof composeLedges === 'function' && herd.length) { propKey = ''; composeLedges(); }
   if (!DESK) buildBackground();
   buildProps();
-  const b = bounds();
-  for (const d of herd) {
+  for (const d of herd) asDeer(d, () => {           // each deer within her own ledge / strip
+    if (d.state === 'leap') return;
+    const b = bounds();
     if (!d.x) { d.x = W * 0.55; d.y = (b.y0 + b.y1) / 2; }
     d.x = clamp(d.x, b.x0, b.x1); d.y = clamp(d.y, b.y0, b.y1);
     if (d.target) { d.target.x = clamp(d.target.x, b.x0, b.x1); d.target.y = clamp(d.target.y, b.y0, b.y1); }
-  }
+  });
 }
 function sizeCanvas(cv) {
   if (EXT) {   // injected pages have no stylesheet of ours
     cv.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated';
   }
-  const CW = DESK ? Math.min(DESK_CW, W) : W;
-  cv.width = CW; cv.height = H;
-  cv.style.width = CW * SCALE + 'px'; cv.style.height = H * SCALE + 'px';
+  const CW = DESK ? Math.min(DESK_CW, W) : W, CH = DESK ? Math.min(DESK_CH, H) : H;
+  cv.width = CW; cv.height = CH;
+  cv.style.width = CW * SCALE + 'px'; cv.style.height = CH * SCALE + 'px';
   cv.getContext('2d').imageSmoothingEnabled = false;
 }
 
@@ -630,13 +653,13 @@ let deer = herd[0];
 let auto = true;
 
 // Options (the Mac app sets these from its menu; the browser panel has checkboxes)
-const OPT = { ignore: false, watch: true, follow: false, friend: false, shy: false };
+const OPT = { ignore: false, watch: true, follow: false, friend: false, shy: false, props: false };
 for (const key of Object.keys(OPT)) if (window.DEER_OPTS && key in window.DEER_OPTS) OPT[key] = !!window.DEER_OPTS[key];
 
 const LABELS = {
   stand: 'standing', look: 'looking around', walk: 'walking', run: 'running', jump: 'jumping',
   sleep: 'sleeping', rest: 'resting', graze: 'eating grass', chew: 'chewing', chewlook: 'chew + look',
-  stare: 'staring at you', curious: 'curious', fed: 'eating from hand', pet: 'being petted', play: 'playing',
+  stare: 'staring at you', leap: 'leaping', curious: 'curious', fed: 'eating from hand', pet: 'being petted', play: 'playing',
 };
 
 function setState(s) {
@@ -676,6 +699,90 @@ function startJump() {
   setState('jump');
 }
 
+// Leap in an arc to x on ledge l (null = stay on this ledge, e.g. hopping over her friend).
+// h is how far above the higher end the arc peaks.
+function leapTo(l, x, h = 26) {
+  const y1 = l ? l.y : deer.y;
+  const m = l && l.prop ? 0 : LEDGE_MARGIN;
+  const x1 = l ? clamp(x, l.x0 + m, Math.max(l.x0 + m, l.x1 - m)) : x;
+  const rise = deer.y - y1;                          // > 0 going up
+  const dist = Math.hypot(x1 - deer.x, rise);
+  deer.leap = {
+    x0: deer.x, y0: deer.y, x1, y1, id: l ? l.id : deer.ledgeId, rise, h,
+    dur: clamp(0.42 + dist / 620, 0.45, 1.5), t: 0, resume: deer.target,
+  };
+  if (Math.abs(x1 - deer.x) > 2) deer.face = sign(x1 - deer.x);
+  deer.target = null; deer.afterArrive = null; deer.z = 0;
+  setState('leap');
+}
+const LEAP_CROUCH = 0.13;
+function leapStep(dt) {
+  const L = deer.leap;
+  if (!L) { setState('stand'); return; }
+  L.t += dt;
+  if (L.t < LEAP_CROUCH) return;                     // gather herself before take-off
+  const p = clamp((L.t - LEAP_CROUCH) / L.dur, 0, 1);
+  const tl = ledgeById(L.id);
+  if (tl) { L.y1 = tl.y; L.x1 = clamp(L.x1, tl.x0 + 4, Math.max(tl.x0 + 4, tl.x1 - 4)); }   // her window may be moving
+  deer.x = lerp(L.x0, L.x1, p);
+  deer.y = L.rise >= 0
+    ? lerp(L.y0, L.y1, p) - 4 * p * (1 - p) * (L.rise / 2 + L.h)       // up: one smooth arc
+    : lerp(L.y0, L.y1, p * p) - 4 * p * (1 - p) * L.h;                  // down: a hop, then falling faster
+  if (p >= 1) {
+    deer.ledgeId = L.id; deer.y = L.y1; deer.x = L.x1; deer.leap = null;
+    spawn('dust', deer.x - 7, deer.y); spawn('dust', deer.x + 7, deer.y);
+    if (L.resume) walkTo(L.resume.x, deer.y, false);   // carry on where she was headed
+    else { setState('stand'); deer.idleDur = rand(1.2, 2.5); }
+  }
+}
+
+// Where she could leap to on ledge l from here, or null if it's out of reach.
+const LEAP_REACH_X = 340, LEAP_REACH_UP = 2000, LEAP_REACH_DOWN = 2000;   // she's a cartoon: any height
+function leapSpot(l) {
+  if (!l || l.id === deer.ledgeId || (!l.prop && l.x1 - l.x0 < 60)) return null;
+  const x = l.prop ? (l.x0 + l.x1) / 2 : clamp(deer.x, l.x0 + 24, l.x1 - 24), rise = deer.y - l.y;
+  if (Math.abs(x - deer.x) > LEAP_REACH_X || rise > LEAP_REACH_UP || -rise > LEAP_REACH_DOWN) return null;
+  return x;
+}
+// Head for ledge l: leap straight there if she can, otherwise walk along her own ledge to the
+// point nearest it first, then leap.
+function goToLedge(l, nearX) {
+  if (!l) return false;
+  const direct = leapSpot(l);
+  if (direct != null) { leapTo(l, l.prop ? direct : clamp(nearX ?? direct, l.x0 + 24, l.x1 - 24)); return true; }
+  if (deer.y - l.y > LEAP_REACH_UP) return false;     // too high to ever reach from this ledge
+  const b = bounds();
+  const x = clamp(l.prop ? (l.x0 + l.x1) / 2 - sign((l.x0 + l.x1) / 2 - deer.x) * 40 : nearX ?? (l.x0 + l.x1) / 2, b.x0, b.x1);
+  if (Math.abs(x - deer.x) < 4) return false;
+  deer.hopTarget = l.id;
+  walkTo(x, deer.y, Math.abs(x - deer.x) > 160, 'hop');
+  return true;
+}
+// Pick somewhere fun to jump to: mostly the tops of windows.
+function hopSomewhere() {
+  if (!LEDGES) return false;
+  const opts = [];
+  for (const l of LEDGES) {
+    if (l.id === deer.ledgeId || (!l.prop && l.x1 - l.x0 < 60)) continue;
+    if (deer.y - l.y > LEAP_REACH_UP) continue;
+    opts.push({ l, w: l.id === 'ground' ? 0.5 : l.prop ? 1.0 : 1.5 });
+  }
+  let total = opts.reduce((a, o) => a + o.w, 0), r = Math.random() * total;
+  for (const o of opts) {
+    if ((r -= o.w) <= 0) return goToLedge(o.l, o.l.prop ? undefined : rand(o.l.x0 + 24, o.l.x1 - 24));
+  }
+  return false;
+}
+// The ledge right under a point (the highest one at or below y), or the ground.
+function ledgeBelow(x, y) {
+  let best = null;
+  for (const l of LEDGES || []) {
+    if (x < l.x0 || x > l.x1 || l.y < y - 1) continue;
+    if (!best || l.y < best.y) best = l;
+  }
+  return best || groundLedge();
+}
+
 function startPlay() {
   setState('play'); deer.playDur = rand(8, 13); deer.hopIdx = -1; deer.hopT = 0; deer.dart = false; deer.target = null;
 }
@@ -710,6 +817,7 @@ function pickNext() {
   const b = bounds();
   if (deer.since > 50 && Math.random() < 0.35) { setState('sleep'); deer.sleepDur = rand(18, 35); return; }
   if (deer.since > 20 && Math.random() < 0.12) { setState('rest'); deer.idleDur = rand(8, 15); return; }
+  if (LEDGES && Math.random() < 0.2 && hopSomewhere()) return;   // up onto a window (or back down)
   const r = Math.random();
   if (r < 0.22) walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), false);
   else if (r < 0.46) goEatFlower(false);
@@ -760,10 +868,27 @@ function keyDir() {
   return { x, y };
 }
 
+// Waving the cursor back and forth over a sleeping deer gently wakes her (only when cursor
+// interaction is on). Movement over her builds up; it fades if you stop.
+const WAKE_AFTER = 650;                              // px of waving
+function wakeByWaving(dt) {
+  const s = deer.state;
+  deer.wave = Math.max(0, (deer.wave || 0) - 220 * dt);
+  if (OPT.ignore || (s !== 'sleep' && s !== 'rest') || !mouse.inside) return false;
+  if (cursorOnDeer() && mouse.still < 0.2) deer.wave += Math.min(mouse.speed, 2000) * dt;
+  if (deer.wave < WAKE_AFTER) return false;
+  deer.wave = 0; deer.since = 0;
+  setState('stare'); deer.idleDur = rand(2.5, 4);   // up she gets, and looks right at you
+  if (Math.abs(mouse.x - deer.x) > 6) deer.face = sign(mouse.x - deer.x);
+  spawn('heart', deer.x + deer.face * 6, deer.y - 40);
+  return true;
+}
+
 // Shared cursor logic. Returns true if the cursor is currently "in charge" of her.
 function cursorReact(dt) {
   const s = deer.state;
   const engaged = s === 'curious' || s === 'fed' || s === 'pet';
+  if (wakeByWaving(dt)) return true;
   if (OPT.ignore || OPT.shy) { if (engaged) { setState('look'); deer.idleDur = rand(2, 4); } return false; }   // auto / shy: no approaching
   if (!mouse.inside) { if (engaged) setState(auto ? 'look' : 'stand'); return false; }
   const b = bodyCenter();
@@ -882,6 +1007,7 @@ function updateDeer(dt) {
   const lieTarget = deer.state === 'sleep' || deer.state === 'rest' ? 1 : 0;
   deer.lie = clamp(deer.lie + Math.sign(lieTarget - deer.lie) * dt / 1.1, 0, 1);
   if (deer.state !== 'jump' && deer.state !== 'play') deer.z = 0;
+  if (deer.state !== 'leap') deer.leap = null;
 
   const s = deer.state;
   if (s === 'curious' || s === 'fed' || s === 'pet') deer.since = 0;
@@ -921,6 +1047,7 @@ function setFriend(on) {
     f.x = clamp(herd[0].x + (herd[0].x > (b.x0 + b.x1) / 2 ? -60 : 60), b.x0, b.x1);
     f.y = DESK ? b.y0 : clamp(herd[0].y - 6, b.y0, b.y1);   // a touch further back, so they layer nicely
     f.face = sign(herd[0].x - f.x);
+    if (LEDGES) { f.ledgeId = herd[0].ledgeId; f.y = herd[0].y; }   // arrives beside her, on the same window
     if (DESK) {
       f.cv = document.createElement('canvas'); f.cv.className = 'deerCanvas';
       (canvas.parentNode || document.body).insertBefore(f.cv, canvas); sizeCanvas(f.cv);
@@ -941,6 +1068,15 @@ function socialStep(dt) {
   const [a, b] = herd;
   if ((social.cd -= dt) > 0) return;
   if (!FREE.includes(a.state) || !FREE.includes(b.state)) { social.cd = 1; return; }
+  if (LEDGES && (ledgeOf(a).prop || ledgeOf(b).prop)) { social.cd = 2; return; }   // wait till she's off the stump
+  if (LEDGES && a.ledgeId !== b.ledgeId) {           // on different windows: one goes to join the other
+    const [goer, host] = Math.random() < 0.5 ? [a, b] : [b, a];
+    let ok = false;
+    asDeer(goer, () => { ok = goToLedge(ledgeOf(host), host.x + rand(-30, 30)); });
+    if (!ok) asDeer(host, () => { ok = goToLedge(ledgeOf(goer), goer.x + rand(-30, 30)); });
+    social.cd = ok ? 3 : rand(8, 14);
+    return;
+  }
   social.cd = rand(10, 18);
   const sleepy = a.since > 25 && b.since > 25;
   const r = Math.random();
@@ -979,7 +1115,12 @@ function socialRunLeg(lead = herd[0], other = herd[1]) {
 function followCursor(dt) {
   if (!OPT.follow || OPT.ignore || !mouse.inside) return false;
   const s = deer.state;
-  if (['curious', 'fed', 'pet', 'jump', 'sleep', 'rest'].includes(s)) return false;
+  if (['curious', 'fed', 'pet', 'jump', 'sleep', 'rest', 'leap'].includes(s)) return false;
+  if (deer.afterArrive === 'hop' && (s === 'walk' || s === 'run')) return false;   // already on her way
+  if (LEDGES && s !== 'leap' && deer.st > 0.4) {      // the cursor is over another window: hop across
+    const under = ledgeBelow(mouse.x, mouse.y);
+    if (under && under.id !== deer.ledgeId && goToLedge(under, mouse.x)) return true;
+  }
   const side = deer === herd[0] ? 0 : (deer.x < mouse.x ? -24 : 24);   // the friend keeps a little to one side
   const b = bounds(), tx = clamp(mouse.x + side, b.x0, b.x1), dx = tx - deer.x;
   if (Math.abs(dx) > 22 || ((s === 'walk' || s === 'run') && Math.abs(dx) > 4)) {
@@ -1005,12 +1146,41 @@ function cursorOnDeer() {
 function shyStep(dt) {
   deer.hovered = OPT.shy && cursorOnDeer();
   deer.alpha = (deer.alpha ?? 1) + ((deer.hovered ? 0.2 : 1) - (deer.alpha ?? 1)) * Math.min(1, dt * 12);
-  if (!deer.hovered || ['sleep', 'rest', 'jump'].includes(deer.state) || deer.shyRun) return;
+  if (!deer.hovered || ['sleep', 'rest', 'jump', 'leap'].includes(deer.state) || deer.shyRun) return;
   const b = bounds();
   let dir = sign(deer.x - mouse.x);
   if ((dir > 0 && deer.x > b.x1 - 60) || (dir < 0 && deer.x < b.x0 + 60)) dir = -dir;   // cornered: go past
   deer.shyRun = true;
   walkTo(clamp(mouse.x + dir * rand(90, 140), b.x0, b.x1), deer.y, true, 'shyDone');
+}
+
+// Her friend is standing right in her path: bound over her back instead of walking through.
+// A stump, rock or log right in her path: usually bound over it, sometimes hop up onto it.
+function hopOverProp() {
+  const t = deer.target;
+  if (!t || !PROPS.length || ledgeOf(deer).id !== 'ground') return false;
+  const dir = sign(t.x - deer.x);
+  for (const [i, p] of PROPS.entries()) {
+    const near = dir > 0 ? p.x - deer.x : deer.x - (p.x + p.w);
+    if (near < 2 || near > 22) continue;
+    const across = dir > 0 ? p.x + p.w + 16 : p.x - 16;
+    if ((across - t.x) * dir > 0 && Math.random() < 0.6) { leapTo(ledgeById('prop' + i), p.x + p.w / 2); return true; }   // stop on top
+    leapTo(null, across, p.h + 14); deer.leap.resume = t;                                               // over it
+    return true;
+  }
+  return false;
+}
+
+function hopOverFriend() {
+  const f = deer.partner, t = deer.target;
+  if (!f || !t || !DESK || f.state === 'leap' || deer.ledgeId !== f.ledgeId) return false;
+  const dir = sign(t.x - deer.x), ahead = (f.x - deer.x) * dir;
+  if (ahead < 6 || ahead > 26 || Math.abs(t.x - deer.x) < 50 || Math.random() > 0.6) return false;
+  const b = bounds(), land = clamp(f.x + dir * 34, b.x0, b.x1);
+  if (Math.abs(land - deer.x) < 30) return false;
+  leapTo(null, land, 30);
+  deer.leap.resume = t;                              // and keep going afterwards
+  return true;
 }
 
 function autoStep(dt) {
@@ -1020,9 +1190,11 @@ function autoStep(dt) {
   const s = deer.state;
   switch (s) {
     case 'curious': case 'fed': case 'pet': break;
+    case 'leap': leapStep(dt); break;
     case 'jump': jumpStep(dt); break;
     case 'play': playStep(dt); break;
     case 'walk': case 'run':
+      if (hopOverFriend() || hopOverProp()) break;
       if (!deer.target || stepToward(deer.target.x, deer.target.y, s === 'run' ? RUN : WALK, dt)) {
         deer.target = null;
         const after = deer.afterArrive; deer.afterArrive = null;
@@ -1030,6 +1202,10 @@ function autoStep(dt) {
           if (deer.flower) deer.face = sign(deer.flower.x - deer.x);
           setState('graze'); deer.idleDur = rand(4, 7);
         } else if (after === 'runLeg') socialRunLeg();
+        else if (after === 'hop') {                     // walked to the take-off point: now leap
+          const l = ledgeById(deer.hopTarget); deer.hopTarget = null;
+          if (!l || !goToLedge(l)) pickNext();
+        }
         else if (after === 'shyDone') { deer.shyRun = false; setState('look'); deer.idleDur = rand(2, 4); }
         else if (after === 'sleepTogether') {
           const f = deer.partner;
@@ -1181,6 +1357,18 @@ function poseFor(t) {
       }
       P.neck = -1.25; P.tailRaise = 0.45; P.earPerk = 0.6; break;
     }
+    case 'leap': {
+      const L = deer.leap, p = L ? (L.t - LEAP_CROUCH) / L.dur : 1;
+      if (p < 0) { P.crouch = 0.7; P.legs = P.legs.map(() => ({ s: 0, f: 0.6 })); }          // gathering
+      else if (p < 0.82) {                                                                   // airborne
+        P.legs = [{ s: 0.7, f: 0.9 }, { s: 0.75, f: 0.85 }, { s: -0.75, f: 0.2 }, { s: -0.8, f: 0.1 }];
+        P.pitch = (L && L.rise > 0 ? -0.16 : 0.05) + p * 0.18;                                // nose up, then level out
+      } else {                                                                               // landing
+        P.crouch = 0.35; P.legs = [{ s: 0.3, f: 0.2 }, { s: 0.35, f: 0.15 }, { s: 0.15, f: 0.6 }, { s: 0.1, f: 0.6 }];
+      }
+      P.neck = -1.2; P.tailRaise = 0.6; P.earPerk = 0.8; P.tongue = p > 0.1 && p < 0.8 ? 0.6 : 0;
+      break;
+    }
     case 'play':
       if (deer.dart && deer.z > 1) {             // scatter leap: stretched out flat
         P.legs = [{ s: 0.75, f: 0.35 }, { s: 0.85, f: 0.25 }, { s: -0.8, f: 0.05 }, { s: -0.9, f: 0 }];
@@ -1304,6 +1492,14 @@ function emitParticles(dt) {
     if (s === 'graze' && Math.random() < 0.25) spawn('crumb', h.x + deer.face * 4, deer.y - 2, '#5d9a42');
     if (s === 'sleep' && deer.lie >= 1 && Math.random() < 0.12) spawn('z', deer.x + deer.face * 14, deer.y - 20);
     if (s === 'run' && Math.random() < 0.6) spawn('dust', deer.x - deer.face * 10, deer.y);
+    // a little heart when your cursor is close (and gentle), or when she's snuggled up to her friend
+    const calmCursor = !OPT.ignore && mouse.inside && mouse.speed < CURIOUS_SPEED;
+    if (s !== 'pet' && s !== 'leap' && calmCursor && petDistance(mouse.x, mouse.y) < 36 && Math.random() < 0.1)
+      spawn('heart', deer.x + deer.face * 6 + rand(-5, 5), deer.y - 46 + (deer.lie > 0.5 ? 20 : 0));
+    const f = deer.partner;
+    if (f && f.state !== 'leap' && s !== 'leap' && s !== 'run' && f.state !== 'run' &&
+        Math.abs(f.x - deer.x) < 38 && Math.abs(f.y - deer.y) < 8 && Math.random() < (s === 'sleep' ? 0.02 : 0.05))
+      spawn('heart', (deer.x + f.x) / 2 + rand(-4, 4), deer.y - (deer.lie > 0.5 ? 26 : 50));
   }
 }
 function updateParticles(dt) {
@@ -1406,9 +1602,13 @@ function renderDesk(t) {
     const cv = i === 0 ? canvas : d.cv;
     wg = cv.getContext('2d'); deer = d;
     const ox = Math.round(clamp(d.x - cv.width / 2, 0, W - cv.width));
-    if (ox !== d.ox) { d.ox = ox; cv.style.transform = `translateX(${ox * SCALE}px)`; }
-    wg.setTransform(1, 0, 0, 1, -ox, 0);
-    wg.clearRect(ox, 0, cv.width, H);
+    const oy = Math.round(clamp(d.y - cv.height + 14, 0, H - cv.height));   // feet near the box's bottom
+    if (ox !== d.ox || oy !== d.oy) {
+      d.ox = ox; d.oy = oy;
+      cv.style.transform = `translate(${ox * SCALE}px, ${oy * SCALE}px)`;
+    }
+    wg.setTransform(1, 0, 0, 1, -ox, -oy);
+    wg.clearRect(ox, oy, cv.width, cv.height);
     const a = Math.round((d.alpha ?? 1) * 20) / 20;
     if (a !== d.shownAlpha) { d.shownAlpha = a; cv.style.opacity = a; }
     drawDeer(t, d.P);
@@ -1538,7 +1738,7 @@ let last = performance.now(), T = 0, lastUi = '';
 // On the desktop, drive the loop with a timer instead of requestAnimationFrame: rAF would wake us
 // at the display's refresh rate (up to 144Hz) just to skip most frames. Pixel art doesn't need it:
 // 24fps while something's moving, 12fps while idle, 8fps while everyone's asleep.
-const ACTIVE = ['walk', 'run', 'play', 'jump', 'fed', 'pet', 'curious'];
+const ACTIVE = ['walk', 'run', 'play', 'jump', 'leap', 'fed', 'pet', 'curious'];
 function deskFps() {
   const watching = OPT.watch && !OPT.ignore && mouse.still < 1 && herd.some(d => TRACK_STATES.includes(d.state));
   const fading = herd.some(d => Math.abs((d.alpha ?? 1) - (d.hovered ? 0.2 : 1)) > 0.02);
@@ -1584,14 +1784,132 @@ if (EXT) {
   addEventListener('mouseout', e => { if (!e.relatedTarget) mouse.inside = false; }, { passive: true });
   addEventListener('scroll', () => { deskOxReset(); }, { passive: true });
 }
-function deskOxReset() { for (const d of herd) d.ox = null; }
+function deskOxReset() { for (const d of herd) { d.ox = null; d.oy = null; } }
+
+function drawPropCanvas(ground) {
+  if (!DESK) return;
+  const key = JSON.stringify([PROPS, ground && ground.y, W, SCALE]);
+  if (key === propKey) return;
+  propKey = key;
+  if (!PROPS.length || !ground) { if (propCanvas) propCanvas.style.display = 'none'; return; }
+  if (!propCanvas) {
+    propCanvas = document.createElement('canvas');
+    propCanvas.className = 'deerCanvas';
+    propCanvas.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated';
+    (canvas.parentNode || document.body).insertBefore(propCanvas, (canvas.parentNode || document.body).firstChild);
+  }
+  const top = Math.round(ground.y) - 22;
+  propCanvas.style.display = 'block';
+  propCanvas.width = W; propCanvas.height = 26;
+  propCanvas.style.width = W * SCALE + 'px'; propCanvas.style.height = 26 * SCALE + 'px';
+  propCanvas.style.transform = `translate(0px, ${top * SCALE}px)`;
+  const g = propCanvas.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, W, 26);
+  for (const p of PROPS) drawProp(g, p, p.x, 22);
+}
+// Little pixel props, base at y = baseY (their bottom edge).
+function drawProp(g, p, x, baseY) {
+  const px = (c, dx, dy, w = 1, h = 1) => { g.fillStyle = c; g.fillRect(x + dx, baseY - dy - h, w, h); };
+  const ink = '#3b2317';
+  g.fillStyle = 'rgba(40,70,20,0.25)'; g.fillRect(x - 2, baseY - 1, p.w + 4, 2);              // shadow
+  if (p.kind === 'stump') {
+    px(ink, 0, 0, p.w, p.h); px('#8a5a35', 1, 1, p.w - 2, p.h - 3); px('#a8743f', 3, 2, 2, p.h - 5);
+    px('#6e4426', p.w - 5, 2, 2, p.h - 5);
+    px(ink, 0, p.h - 3, p.w, 3); px('#d9b27a', 1, p.h - 2, p.w - 2, 1); px('#c89a5f', 4, p.h - 3, p.w - 8, 1);
+    px('#a8743f', Math.floor(p.w / 2) - 1, p.h - 2, 2, 1);                                      // rings
+  } else if (p.kind === 'rock') {
+    px(ink, 2, 0, p.w - 4, p.h); px(ink, 0, 1, p.w, p.h - 3);
+    px('#9a9a92', 1, 1, p.w - 2, p.h - 3); px('#9a9a92', 3, p.h - 2, p.w - 6, 1);
+    px('#b9b9b0', 3, p.h - 3, 5, 1); px('#7d7d76', p.w - 6, 1, 4, 2);
+    px('#6aa84a', 1, 1, 2, 1); px('#6aa84a', p.w - 4, 1, 2, 1);                                 // moss
+  } else if (p.kind === 'log') {
+    px(ink, 0, 0, p.w, p.h); px('#7a4a2a', 1, 1, p.w - 6, p.h - 2); px('#94603a', 1, p.h - 3, p.w - 6, 1);
+    px('#5e3820', 3, 2, p.w - 12, 1);
+    px('#d9b27a', p.w - 5, 1, 4, p.h - 2); px('#a8743f', p.w - 4, 3, 2, p.h - 6);              // cut end
+  } else if (p.kind === 'crate') {
+    px(ink, 0, 0, p.w, p.h); px('#c08a4e', 1, 1, p.w - 2, p.h - 2);
+    px('#8a5a35', 1, Math.floor(p.h / 2), p.w - 2, 1); px('#8a5a35', Math.floor(p.w / 2), 1, 1, p.h - 2);
+    px('#d9a868', 2, p.h - 3, p.w - 4, 1);
+  }
+}
+
+// The host sends the ledges whenever windows move, open or close (in CSS px).
+function setLedges(list) {
+  const next = Array.isArray(list) ? list
+    .filter(l => l && Number.isFinite(l.x0) && Number.isFinite(l.x1) && Number.isFinite(l.y))
+    .map(l => ({ id: String(l.id), x0: l.x0 / SCALE, x1: l.x1 / SCALE, y: l.y / SCALE })) : [];
+  hostLedges = next.length ? next : null;
+  composeLedges();
+}
+
+// ── little things to jump on: a stump, a rock, a log, a crate, scattered along the ground ──
+function layoutProps(ground) {
+  PROPS = [];
+  if (!OPT.props || !ground) return;
+  const span = ground.x1 - ground.x0, n = clamp(Math.round(span / 420), 2, 5), r = mulberry32(31);
+  const slot = span / n;
+  for (let i = 0; i < n; i++) {
+    const k = PROP_KINDS[(i + Math.floor(r() * 4)) % PROP_KINDS.length];
+    const cx = ground.x0 + slot * (i + 0.5) + (r() - 0.5) * slot * 0.4;
+    PROPS.push({ ...k, x: Math.round(cx - k.w / 2), y: ground.y });
+  }
+}
+function composeLedges() {
+  // the ground is the host's, or (on the plain strip) just the bottom line
+  const ground = (hostLedges && hostLedges.find(l => l.id === 'ground')) ||
+    (DESK && OPT.props ? { id: 'ground', x0: 0, x1: W, y: H - 5 } : null);
+  layoutProps(ground);
+  drawPropCanvas(ground);
+  const props = PROPS.map((p, i) => ({ id: 'prop' + i, x0: p.x, x1: p.x + p.w, y: p.y - p.h + 1, prop: true }));
+  const base = hostLedges ? hostLedges : (ground ? [ground] : []);
+  applyLedges(base.length ? [...base.filter(l => l.id !== 'ground'), ...props, ...base.filter(l => l.id === 'ground')] : null);
+}
+
+// Puts the deer onto the new set of ledges: riding along with windows that moved, re-finding
+// her footing on a re-split edge, or dropping down if hers is gone.
+function applyLedges(next) {
+  const prev = LEDGES;
+  LEDGES = next && next.length ? next : null;
+  if (!LEDGES) return;
+  for (const d of herd) asDeer(d, () => {
+    if (deer.state === 'leap') return;               // the leap tracks its own target
+    const was = prev && d.ledgeId != null ? prev.find(l => l.id === d.ledgeId) : null;
+    let now = ledgeById(d.ledgeId);
+    if (!now && d.ledgeId && d.ledgeId.includes(':')) {   // same window, edge re-split: keep her footing
+      const win = d.ledgeId.split(':')[0] + ':';
+      now = LEDGES.find(l => l.id.startsWith(win) && deer.x >= l.x0 - 2 && deer.x <= l.x1 + 2 && Math.abs(l.y - deer.y) < 30) || null;
+      if (now) d.ledgeId = now.id;
+    }
+    if (now) {
+      if (was) {                                       // her window moved: ride along with it
+        const dx = now.x0 - was.x0;
+        deer.x += dx;
+        if (deer.target) { deer.target.x += dx; deer.target.y = now.y; }
+      }
+      deer.y = now.y;
+      deer.x = clamp(deer.x, now.x0 + 4, Math.max(now.x0 + 4, now.x1 - 4));
+    } else if (d.ledgeId == null && !prev) {         // first ledges ever: start on the ground
+      const g = groundLedge();
+      deer.ledgeId = g.id; deer.y = g.y;
+      deer.x = clamp(deer.x || g.x0 + (g.x1 - g.x0) * (d === herd[0] ? 0.55 : 0.5), g.x0 + 30, g.x1 - 30);
+    } else {                                         // her window closed or moved away: down she goes
+      const below = ledgeBelow(deer.x, deer.y);
+      deer.lie = Math.min(deer.lie, 0.59);
+      leapTo(below, deer.x, 8);
+    }
+  });
+}
 
 window.deerDesktop = {
   cursor(x, y, down) { mouse.cx = x; mouse.cy = y; mouse.inside = true; mouse.down = down; },
+  setLedges,
   setScale(s) { window.DEER_SCALE = s; resize(); },
   setOptions(o) {   // hosts (Mac menu, extension popup, prototype panel) flip these
+    const hadProps = OPT.props;
     for (const key of Object.keys(OPT)) if (key in Object(o)) OPT[key] = !!o[key];
     setFriend(!!OPT.friend);
+    if (OPT.props !== hadProps) composeLedges();
     syncOptionBoxes();
   },
   setPaused(p) {
@@ -1615,7 +1933,8 @@ syncOptionBoxes();
 
 // Dev hook for the console / Design Lab, e.g. window.deerDebug.renderState('graze', 1.2)
 window.deerDebug = {
-  get deer() { return herd[0]; }, herd, social, OPT, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
+  get deer() { return herd[0]; }, herd, social, OPT, get ledges() { return LEDGES; },
+  hopTo(id, who = 0) { asDeer(herd[who], () => goToLedge(ledgeById(id))); }, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
   // Render one pose synchronously (works even when rAF is paused): renderState('graze', 1.2, {lie: 1})
   renderState(state, t = 1, extra = {}) {
     const saved = { state: deer.state, st: deer.st, lie: deer.lie, z: deer.z, phase: deer.phase,

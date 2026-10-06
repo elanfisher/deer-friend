@@ -31,6 +31,57 @@ enum WindowTracker {
         }
     }
 
+    /// A stretch of window top-edge she can stand on, in the overlay's own coordinates
+    /// (origin top-left, y down).
+    struct Ledge {
+        let id: String
+        let x0: CGFloat
+        let x1: CGFloat
+        let y: CGFloat
+    }
+
+    /// The *visible* top edges of the on-screen windows inside `overlay` (an AppKit frame):
+    /// each window's top edge minus the parts hidden behind windows in front of it.
+    /// `headroom` keeps ledges far enough below the top that she isn't cut off.
+    static func ledges(in overlay: NSRect, headroom: CGFloat) -> [Ledge] {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let raw = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let me = ProcessInfo.processInfo.processIdentifier
+        // Front-to-back, ordinary visible app windows (not ours).
+        let windows: [WindowInfo] = raw.compactMap { info in
+            guard (info[kCGWindowLayer as String] as? Int) == 0,
+                  (info[kCGWindowOwnerPID as String] as? pid_t) != me,
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.1,
+                  let window = parse(info), window.bounds.width >= 40, window.bounds.height >= 40 else { return nil }
+            return window
+        }
+
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let area = CGRect(x: overlay.minX, y: primaryHeight - overlay.maxY, width: overlay.width, height: overlay.height)
+
+        var result: [Ledge] = []
+        for (index, window) in windows.enumerated() {
+            let b = window.bounds
+            let edge = b.minY
+            guard b.width >= 120, b.height >= 60,
+                  edge >= area.minY + headroom, edge <= area.maxY - 40 else { continue }
+            var spans = [(max(b.minX, area.minX), min(b.maxX, area.maxX))]
+            // Remove whatever part of this edge is covered by windows in front of it.
+            for front in windows[..<index] where front.bounds.minY <= edge + 2 && front.bounds.maxY >= edge {
+                spans = spans.flatMap { span -> [(CGFloat, CGFloat)] in
+                    let (lo, hi) = span, cutLo = front.bounds.minX, cutHi = front.bounds.maxX
+                    if cutHi <= lo || cutLo >= hi { return [span] }
+                    return [(lo, min(hi, cutLo)), (max(lo, cutHi), hi)].filter { $0.1 - $0.0 > 0 }
+                }
+            }
+            for (k, span) in spans.filter({ $0.1 - $0.0 >= 70 }).sorted(by: { $0.0 < $1.0 }).enumerated() {
+                result.append(Ledge(id: "w\(window.id):\(k)",
+                                    x0: span.0 - area.minX, x1: span.1 - area.minX, y: edge - area.minY))
+            }
+        }
+        return result
+    }
+
     /// Current bounds of one window, and whether it's on screen (not minimized / on another Space).
     static func lookup(_ id: CGWindowID) -> (bounds: CGRect, onScreen: Bool)? {
         guard let raw = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],

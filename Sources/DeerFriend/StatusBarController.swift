@@ -7,6 +7,8 @@ protocol DeerMenuHost: AnyObject {
     var launchAtLogin: Bool { get }
     var currentDisplayName: String { get }
     var perchedWindowID: CGWindowID? { get }
+    var home: String { get }
+    var isRoaming: Bool { get }
     func option(_ key: DeerOption) -> Bool
     func setOption(_ key: DeerOption, _ on: Bool)
     func setScale(_ scale: Double)
@@ -14,11 +16,12 @@ protocol DeerMenuHost: AnyObject {
     func setLaunchAtLogin(_ on: Bool)
     func setDisplay(_ name: String)
     func perch(on window: WindowInfo?)
+    func setHome(_ home: String)
 }
 
 /// Toggles shared with the page (web/index.html reads them as OPT.<rawValue>).
 enum DeerOption: String, CaseIterable {
-    case friend, ignore, watch, follow, shy, onTop
+    case friend, ignore, watch, follow, shy, onTop, props
 
     var title: String {
         switch self {
@@ -28,10 +31,11 @@ enum DeerOption: String, CaseIterable {
         case .follow: return "Follow the Cursor"
         case .shy: return "Move Out of the Way When Hovered"
         case .onTop: return "Show in Front of Windows"
+        case .props: return "Little Things to Jump On"
         }
     }
 
-    var defaultValue: Bool { self == .watch }
+    var defaultValue: Bool { self == .watch || self == .props }
 }
 
 /// The 🦌 menu-bar item — the only chrome this app has, since the deer's own window is
@@ -72,6 +76,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             host.setDeerHidden(!host.isDeerHidden)
         })
         menu.addItem(toggle(.friend))
+        menu.addItem(toggle(.props))
         menu.addItem(.separator())
 
         for option in [DeerOption.ignore, .watch, .follow, .shy] {
@@ -82,7 +87,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(submenu("Live On", homeItems(host)))
-        menu.addItem(toggle(.onTop))   // off: other windows can cover her
+        let onTop = toggle(.onTop)   // off: other windows can cover her
+        if host.isRoaming {          // roaming she's always in front, but only stands on visible edges
+            onTop.isEnabled = false
+            onTop.toolTip = "When she roams the whole screen she's always drawn in front of windows."
+        }
+        menu.addItem(onTop)
         menu.addItem(submenu("Display", NSScreen.screens.map { screen in
             checked(screen.localizedName, screen.localizedName == host.currentDisplayName) { host.setDisplay(screen.localizedName) }
         }))
@@ -97,7 +107,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// "Bottom of Screen" plus every normal on-screen window she could stand on top of.
     private func homeItems(_ host: DeerMenuHost) -> [NSMenuItem] {
-        var items = [checked("Bottom of Screen", host.perchedWindowID == nil) { host.perch(on: nil) }]
+        var items = [
+            checked("Whole Screen (hop between windows)", host.isRoaming) { host.setHome("screen") },
+            checked("Bottom of Screen", host.perchedWindowID == nil && host.home == "bottom") { host.setHome("bottom") },
+        ]
         let windows = WindowTracker.listWindows()
         if !windows.isEmpty { items.append(.separator()) }
         for w in windows.prefix(20) {

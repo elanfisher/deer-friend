@@ -2,8 +2,9 @@ import AppKit
 import ServiceManagement
 import WebKit
 
-/// Hosts the web fawn (web/index.html in desktop mode) in a transparent, click-through strip —
-/// along the bottom of the screen, or perched on top of a chosen window. The page can't see the
+/// Hosts the web fawn (web/index.html in desktop mode) in a transparent, click-through window:
+/// the whole screen (hopping between the tops of your windows), a strip along the bottom, or
+/// perched on top of one chosen window. The page can't see the
 /// real cursor through a click-through window, so it's polled here and passed in.
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, DeerMenuHost {
     private var window: NSWindow!
@@ -11,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var statusBar: StatusBarController!
     private var cursorTimer: Timer?
     private var perchTimer: Timer?
+    private var ledgeTimer: Timer?
+    private var lastLedges: String?
     private var lastCursor = (x: CGFloat.nan, y: CGFloat.nan, down: false)
     private let defaults = UserDefaults.standard
     private var pageFile: URL?
@@ -23,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private(set) var scale: Double
     private(set) var isDeerHidden = false
     private(set) var perchedWindowID: CGWindowID?
+
+    /// Where she lives when not perched on one window: "screen" (hop between windows) or "bottom".
+    var home: String { defaults.string(forKey: "deerHome") ?? "screen" }
+    var isRoaming: Bool { perchedWindowID == nil && home == "screen" }
 
     override init() {
         scale = UserDefaults.standard.object(forKey: "deerScale") as? Double ?? 1
@@ -38,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         config.userContentController.addUserScript(
             WKUserScript(source: bootScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
-        let win = NSWindow(contentRect: stripFrame(), styleMask: [.borderless], backing: .buffered, defer: false)
+        let win = NSWindow(contentRect: isRoaming ? roamFrame() : stripFrame(), styleMask: [.borderless], backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = .clear
         win.hasShadow = false
@@ -65,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         statusBar = StatusBarController(host: self)
         win.orderFrontRegardless() // show without activating / stealing focus
+        placeForHome()
 
         let timer = Timer(timeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in self?.pushCursor() }
         RunLoop.main.add(timer, forMode: .common)
@@ -78,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// Settings the page needs before its first frame.
     private func bootScript() -> String {
         let opts = DeerOption.allCases.map { "\"\($0.rawValue)\": \(option($0))" }.joined(separator: ", ")
-        return "window.DEER_DESKTOP = true; window.DEER_SCALE = \(scale); window.DEER_OPTS = {\(opts)};"
+        let debug = ProcessInfo.processInfo.environment["DEERFRIEND_DEBUG"] == "1"
+            ? "addEventListener('error', e => { window.__err = e.message + ' @' + e.lineno; });" : ""
+        return debug + "window.DEER_DESKTOP = true; window.DEER_SCALE = \(scale); window.DEER_OPTS = {\(opts)};"
     }
 
     private func pageURL() -> URL? {
@@ -112,6 +122,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return NSRect(x: visible.minX, y: visible.minY, width: visible.width, height: stripHeight * scale)
     }
 
+    /// The whole usable screen (below the menu bar, above the Dock): she roams all of it.
+    private func roamFrame() -> NSRect { currentScreen().visibleFrame }
+
+    /// Puts the window where her home is, and starts or stops feeding her the window ledges.
+    private func placeForHome() {
+        if let id = perchedWindowID, let found = WindowTracker.lookup(id) {
+            place(found.onScreen ? perchFrame(found.bounds) : stripFrame())
+        } else if isRoaming {
+            place(roamFrame())
+        } else {
+            place(stripFrame())
+        }
+        // Roaming she's drawn in front of windows, but only ever stands on their visible edges.
+        window.level = isRoaming || option(.onTop) ? .floating : .normal
+
+        if isRoaming {
+            if ledgeTimer == nil {
+                let timer = Timer(timeInterval: 0.125, repeats: true) { [weak self] _ in self?.pushLedges() }
+                RunLoop.main.add(timer, forMode: .common)
+                ledgeTimer = timer
+            }
+            pushLedges()
+        } else {
+            ledgeTimer?.invalidate()
+            ledgeTimer = nil
+            lastLedges = nil
+            js("deerDesktop.setLedges([])")
+        }
+    }
+
+    /// Sends her the visible tops of your windows, plus the ground — only when they change.
+    private func pushLedges() {
+        guard !isDeerHidden else { return }
+        let frame = window.frame
+        var ledges = WindowTracker.ledges(in: frame, headroom: 80 * scale).map {
+            ["id": $0.id, "x0": Double($0.x0), "x1": Double($0.x1), "y": Double($0.y)] as [String: Any]
+        }
+        ledges.append(["id": "ground", "x0": 0.0, "x1": Double(frame.width), "y": Double(frame.height - 4)])
+        guard let data = try? JSONSerialization.data(withJSONObject: ledges),
+              let json = String(data: data, encoding: .utf8), json != lastLedges else { return }
+        lastLedges = json
+        js("deerDesktop.setLedges(\(json))")
+    }
+
+    func setHome(_ newHome: String) {
+        defaults.set(newHome, forKey: "deerHome")
+        perch(on: nil)
+    }
+
     /// Standing on the top edge of a window.
     private func perchFrame(_ bounds: CGRect) -> NSRect {
         NSRect(x: bounds.minX, y: WindowTracker.appKitTopEdge(of: bounds) - perchSink,
@@ -126,8 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         perchTimer?.invalidate()
         perchTimer = nil
         perchedWindowID = target?.id
-        guard let target else { place(stripFrame()); return }
-        place(perchFrame(target.bounds))
+        placeForHome()
+        guard target != nil else { return }
         // Follow the window as it's dragged around; drop back to the Dock line if it closes.
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.followPerch() }
         RunLoop.main.add(timer, forMode: .common)
@@ -150,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     @objc private func screensChanged() {
-        if perchedWindowID == nil { place(stripFrame()) }
+        if perchedWindowID == nil { placeForHome() }
     }
 
     // MARK: - Menu actions
@@ -162,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func setOption(_ key: DeerOption, _ on: Bool) {
         defaults.set(on, forKey: "opt." + key.rawValue)
         if key == .onTop {
-            window.level = on ? .floating : .normal
+            placeForHome()
             window.orderFrontRegardless()
             return
         }
@@ -172,9 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func setScale(_ s: Double) {
         scale = s
         defaults.set(s, forKey: "deerScale")
-        if let id = perchedWindowID, let found = WindowTracker.lookup(id) { place(perchFrame(found.bounds)) }
-        else { place(stripFrame()) }
         js("deerDesktop.setScale(\(s))")
+        lastLedges = nil
+        placeForHome()
     }
 
     func setDeerHidden(_ hidden: Bool) {
@@ -219,6 +278,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let url = navigationAction.request.url
         let allowed = url?.isFileURL == true && url?.standardizedFileURL.path == pageFile?.standardizedFileURL.path
         decisionHandler(allowed ? .allow : .cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        lastLedges = nil
+        if isRoaming { pushLedges() }
+        // DEERFRIEND_DEBUG=1: log where the deer are every few seconds (development only)
+        if ProcessInfo.processInfo.environment["DEERFRIEND_DEBUG"] == "1" {
+            let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+                self?.webView.evaluateJavaScript(
+                    "window.__err || JSON.stringify(deerDebug.herd.map(d => [d.state, d.ledgeId, Math.round(d.x), Math.round(d.y)]))") { r, _ in
+                    NSLog("deer: \(r ?? "?")  ledges: \(self?.lastLedges?.count ?? 0) chars")
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
