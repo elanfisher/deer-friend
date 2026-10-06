@@ -45,6 +45,34 @@ The Mac app needs macOS 13+ and the Xcode command-line tools (`xcode-select --in
 the Windows app needs .NET 8. To keep her around, turn on **Launch at Login** (Mac) or
 **Start with Windows** in her menu.
 
+## Using her (Mac)
+
+Everything lives in her menu: click the little deer in your menu bar.
+
+| Menu item | What it does |
+| --- | --- |
+| Hide Deer / Show Deer | Tucks her away (and stops animating) until you bring her back |
+| Friend Mode | A second fawn: they play, run around, nap side by side, or ignore each other |
+| Little Things to Jump On | A stump, a rock, a log and a crate along her ground to hop onto and bound over |
+| Auto Mode (Ignore Cursor) | She lives her life and pays no attention to the cursor |
+| Watch the Cursor | Her head follows the cursor, even swivelling back over her shoulder |
+| Follow the Cursor | She walks or runs to stay by the cursor — and hops across to whichever window it's over |
+| Move Out of the Way When Hovered | She fades see-through and trots aside when the cursor lands on her |
+| Live On | **Whole Screen** (she hops between the tops of your windows, riding along when you drag one), the bottom of the screen, or perched on one window |
+| Show in Front of Windows | Off: other windows can cover her (only for Bottom of Screen / one window) |
+| Display / Size | Which screen, and Small / Medium / Large |
+| Launch at Login | Start her automatically when you log in |
+
+Her window is click-through, so she never gets in the way of your clicks.
+
+- **Petting and feeding:** move the cursor slowly up to her and she gets curious; hover near her
+  to pet her, or hold the mouse button down by her mouth to feed her a clover.
+- **Hearts** float up when your cursor is close, and when the two fawns are snuggled together.
+- **Waking her:** wave the cursor back and forth over a sleeping fawn and she'll get up and look
+  at you (not in Auto Mode).
+- **Window hopping** needs some room above a window: maximised windows tucked right under the
+  menu bar have no top edge for her to stand on.
+
 ## Browser prototype + Design Lab
 
 The whole deer lives in one file, [`web/index.html`](web/index.html). Open it in a browser for a
