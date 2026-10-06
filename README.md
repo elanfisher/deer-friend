@@ -52,8 +52,8 @@ Everything lives in her menu: click the little deer in your menu bar.
 | Menu item | What it does |
 | --- | --- |
 | Hide Deer / Show Deer | Tucks her away (and stops animating) until you bring her back |
-| Friend Mode | A second fawn: they play, run around, nap side by side, or ignore each other |
-| Little Things to Jump On | A stump, a rock, a log and a crate along her ground to hop onto and bound over |
+| Friend Mode | A second fawn: they play, run around, nap side by side, ignore each other — and she leapfrogs over her friend |
+| Grass Patches to Rest On | Now and then she hops onto a patch of grass that grows in under her; she grazes, lies down or naps there, and it fades away when she hops off |
 | Auto Mode (Ignore Cursor) | She lives her life and pays no attention to the cursor |
 | Watch the Cursor | Her head follows the cursor, even swivelling back over her shoulder |
 | Follow the Cursor | She walks or runs to stay by the cursor — and hops across to whichever window it's over |

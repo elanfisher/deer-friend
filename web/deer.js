@@ -496,10 +496,7 @@ let LEDGES = null;                                   // [{ id, x0, x1, y, prop? 
 let hostLedges = null;                               // window tops + ground from the Mac app (logical px)
 let PROPS = [];                                      // little things on the ground to hop on and over
 let propCanvas = null, propKey = '';                // their (static) desktop canvas
-const PROP_KINDS = [
-  { kind: 'stump', w: 18, h: 12 }, { kind: 'rock', w: 17, h: 8 },
-  { kind: 'log', w: 30, h: 9 }, { kind: 'crate', w: 15, h: 14 },
-];
+const GRASS_W = 60, GRASS_H = 6;                   // a patch just wider than a fawn, a few px high
 const ledgeById = id => (LEDGES ? LEDGES.find(l => l.id === id) || null : null);
 const groundLedge = () => ledgeById('ground') || (LEDGES && LEDGES[LEDGES.length - 1]) || null;
 const ledgeOf = d => ledgeById(d.ledgeId) || groundLedge();
@@ -702,6 +699,7 @@ function startJump() {
 // Leap in an arc to x on ledge l (null = stay on this ledge, e.g. hopping over her friend).
 // h is how far above the higher end the arc peaks.
 function leapTo(l, x, h = 26) {
+  if (l && ledgeOf(deer).prop && l.prop) l = groundLedge();   // patches aren't stepping stones
   const y1 = l ? l.y : deer.y;
   const m = l && l.prop ? 0 : LEDGE_MARGIN;
   const x1 = l ? clamp(x, l.x0 + m, Math.max(l.x0 + m, l.x1 - m)) : x;
@@ -817,6 +815,16 @@ function pickNext() {
   const b = bounds();
   if (deer.since > 50 && Math.random() < 0.35) { setState('sleep'); deer.sleepDur = rand(18, 35); return; }
   if (deer.since > 20 && Math.random() < 0.12) { setState('rest'); deer.idleDur = rand(8, 15); return; }
+  if (LEDGES && ledgeOf(deer).prop) {                // on her grass patch: graze, rest, nap, or hop off
+    const r = Math.random();
+    if (r < 0.35) { setState('graze'); deer.idleDur = rand(4, 7); return; }
+    if (r < 0.55) { setState('rest'); deer.idleDur = rand(8, 15); return; }
+    if (r < 0.68 && deer.since > 15) { setState('sleep'); deer.sleepDur = rand(18, 35); return; }
+    if (r < 0.8) { setState('chewlook'); deer.idleDur = rand(2.5, 4); return; }
+    const g = groundLedge(), l = ledgeOf(deer);
+    leapTo(g, (l.x0 + l.x1) / 2 + (Math.random() < 0.5 ? -1 : 1) * rand(45, 80));
+    return;
+  }
   if (LEDGES && Math.random() < 0.2 && hopSomewhere()) return;   // up onto a window (or back down)
   const r = Math.random();
   if (r < 0.22) walkTo(rand(b.x0, b.x1), rand(b.y0, b.y1), false);
@@ -997,6 +1005,7 @@ function updateWorld(dt, t) {
   for (const f of flowers) if (f.eaten && (f.regrow -= dt) <= 0) f.eaten = false;
   updateButterflies(dt, t);
   updateParticles(dt, t);
+  updateGrass(dt);
   socialStep(dt);
 }
 
@@ -1147,6 +1156,12 @@ function shyStep(dt) {
   deer.hovered = OPT.shy && cursorOnDeer();
   deer.alpha = (deer.alpha ?? 1) + ((deer.hovered ? 0.2 : 1) - (deer.alpha ?? 1)) * Math.min(1, dt * 12);
   if (!deer.hovered || ['sleep', 'rest', 'jump', 'leap'].includes(deer.state) || deer.shyRun) return;
+  if (LEDGES && ledgeOf(deer).prop) {                // on a grass patch: hop off, away from you
+    const l = ledgeOf(deer);
+    deer.shyRun = false;
+    leapTo(groundLedge(), (l.x0 + l.x1) / 2 + sign(deer.x - mouse.x || 1) * rand(70, 110));
+    return;
+  }
   const b = bounds();
   let dir = sign(deer.x - mouse.x);
   if ((dir > 0 && deer.x > b.x1 - 60) || (dir < 0 && deer.x < b.x0 + 60)) dir = -dir;   // cornered: go past
@@ -1155,22 +1170,6 @@ function shyStep(dt) {
 }
 
 // Her friend is standing right in her path: bound over her back instead of walking through.
-// A stump, rock or log right in her path: usually bound over it, sometimes hop up onto it.
-function hopOverProp() {
-  const t = deer.target;
-  if (!t || !PROPS.length || ledgeOf(deer).id !== 'ground') return false;
-  const dir = sign(t.x - deer.x);
-  for (const [i, p] of PROPS.entries()) {
-    const near = dir > 0 ? p.x - deer.x : deer.x - (p.x + p.w);
-    if (near < 2 || near > 22) continue;
-    const across = dir > 0 ? p.x + p.w + 16 : p.x - 16;
-    if ((across - t.x) * dir > 0 && Math.random() < 0.6) { leapTo(ledgeById('prop' + i), p.x + p.w / 2); return true; }   // stop on top
-    leapTo(null, across, p.h + 14); deer.leap.resume = t;                                               // over it
-    return true;
-  }
-  return false;
-}
-
 function hopOverFriend() {
   const f = deer.partner, t = deer.target;
   if (!f || !t || !DESK || f.state === 'leap' || deer.ledgeId !== f.ledgeId) return false;
@@ -1194,7 +1193,7 @@ function autoStep(dt) {
     case 'jump': jumpStep(dt); break;
     case 'play': playStep(dt); break;
     case 'walk': case 'run':
-      if (hopOverFriend() || hopOverProp()) break;
+      if (hopOverFriend()) break;
       if (!deer.target || stepToward(deer.target.x, deer.target.y, s === 'run' ? RUN : WALK, dt)) {
         deer.target = null;
         const after = deer.afterArrive; deer.afterArrive = null;
@@ -1741,7 +1740,8 @@ let last = performance.now(), T = 0, lastUi = '';
 const ACTIVE = ['walk', 'run', 'play', 'jump', 'leap', 'fed', 'pet', 'curious'];
 function deskFps() {
   const watching = OPT.watch && !OPT.ignore && mouse.still < 1 && herd.some(d => TRACK_STATES.includes(d.state));
-  const fading = herd.some(d => Math.abs((d.alpha ?? 1) - (d.hovered ? 0.2 : 1)) > 0.02);
+  const fading = herd.some(d => Math.abs((d.alpha ?? 1) - (d.hovered ? 0.2 : 1)) > 0.02) ||
+    PROPS.some((p, i) => Math.abs(p.vis - (grassInUse(i) ? 1 : 0)) > 0.02);
   if (watching || fading || herd.some(d => ACTIVE.includes(d.state) || d.swat > 0)) return 24;
   if (herd.every(d => d.state === 'sleep' && d.lie >= 1)) return 8;
   return 12;
@@ -1788,10 +1788,12 @@ function deskOxReset() { for (const d of herd) { d.ox = null; d.oy = null; } }
 
 function drawPropCanvas(ground) {
   if (!DESK) return;
-  const key = JSON.stringify([PROPS, ground && ground.y, W, SCALE]);
+  // quantised visibility; anything still showing is at least 1, so 'faint' never matches 'gone'
+  const key = JSON.stringify([PROPS.map(p => [p.x, p.vis > 0.02 ? Math.max(1, Math.round(p.vis * 20)) : 0]), ground && ground.y, W, SCALE]);
   if (key === propKey) return;
   propKey = key;
-  if (!PROPS.length || !ground) { if (propCanvas) propCanvas.style.display = 'none'; return; }
+  const showing = PROPS.filter(p => p.vis > 0.02);
+  if (!showing.length || !ground) { if (propCanvas) propCanvas.style.display = 'none'; return; }
   if (!propCanvas) {
     propCanvas = document.createElement('canvas');
     propCanvas.className = 'deerCanvas';
@@ -1806,34 +1808,37 @@ function drawPropCanvas(ground) {
   const g = propCanvas.getContext('2d');
   g.imageSmoothingEnabled = false;
   g.clearRect(0, 0, W, 26);
-  for (const p of PROPS) drawProp(g, p, p.x, 22);
+  for (const p of showing) drawProp(g, p, p.x, 22);
 }
-// Little pixel props, base at y = baseY (their bottom edge).
+// A grassy patch, base at y = baseY. vis 0..1 grows the blades in and fades it.
 function drawProp(g, p, x, baseY) {
-  const px = (c, dx, dy, w = 1, h = 1) => { g.fillStyle = c; g.fillRect(x + dx, baseY - dy - h, w, h); };
-  const ink = '#3b2317';
-  g.fillStyle = 'rgba(40,70,20,0.25)'; g.fillRect(x - 2, baseY - 1, p.w + 4, 2);              // shadow
-  if (p.kind === 'stump') {
-    px(ink, 0, 0, p.w, p.h); px('#8a5a35', 1, 1, p.w - 2, p.h - 3); px('#a8743f', 3, 2, 2, p.h - 5);
-    px('#6e4426', p.w - 5, 2, 2, p.h - 5);
-    px(ink, 0, p.h - 3, p.w, 3); px('#d9b27a', 1, p.h - 2, p.w - 2, 1); px('#c89a5f', 4, p.h - 3, p.w - 8, 1);
-    px('#a8743f', Math.floor(p.w / 2) - 1, p.h - 2, 2, 1);                                      // rings
-  } else if (p.kind === 'rock') {
-    px(ink, 2, 0, p.w - 4, p.h); px(ink, 0, 1, p.w, p.h - 3);
-    px('#9a9a92', 1, 1, p.w - 2, p.h - 3); px('#9a9a92', 3, p.h - 2, p.w - 6, 1);
-    px('#b9b9b0', 3, p.h - 3, 5, 1); px('#7d7d76', p.w - 6, 1, 4, 2);
-    px('#6aa84a', 1, 1, 2, 1); px('#6aa84a', p.w - 4, 1, 2, 1);                                 // moss
-  } else if (p.kind === 'log') {
-    px(ink, 0, 0, p.w, p.h); px('#7a4a2a', 1, 1, p.w - 6, p.h - 2); px('#94603a', 1, p.h - 3, p.w - 6, 1);
-    px('#5e3820', 3, 2, p.w - 12, 1);
-    px('#d9b27a', p.w - 5, 1, 4, p.h - 2); px('#a8743f', p.w - 4, 3, 2, p.h - 6);              // cut end
-  } else if (p.kind === 'crate') {
-    px(ink, 0, 0, p.w, p.h); px('#c08a4e', 1, 1, p.w - 2, p.h - 2);
-    px('#8a5a35', 1, Math.floor(p.h / 2), p.w - 2, 1); px('#8a5a35', Math.floor(p.w / 2), 1, 1, p.h - 2);
-    px('#d9a868', 2, p.h - 3, p.w - 4, 1);
+  const k = p.vis, w = p.w, r = mulberry32(p.x * 7 + 3);
+  g.globalAlpha = Math.min(1, k * 1.4);
+  g.fillStyle = 'rgba(40,70,20,0.22)'; g.fillRect(x - 1, baseY - 1, w + 2, 2);                // shadow
+  // a low, rounded mound: wider at the bottom, a few px tall
+  const rows = Math.max(1, Math.round(p.h * Math.min(1, k * 1.3)));
+  for (let row = 0; row < rows; row++) {
+    const inset = Math.round(((row + 1) / p.h) ** 2 * 6);
+    g.fillStyle = row === rows - 1 ? '#8cc063' : row < 2 ? '#4c8a38' : '#6aa84a';
+    g.fillRect(x + inset, baseY - 1 - row, w - inset * 2, 1);
   }
+  // tufts of blades sticking up, growing with k
+  const blades = Math.round(w / 3);
+  for (let b = 0; b < blades; b++) {
+    const bx = x + 3 + Math.floor(r() * (w - 6)), tall = Math.round((2 + r() * 4) * k);
+    const lean = r() < 0.5 ? -1 : 1;
+    g.fillStyle = r() < 0.3 ? '#a3cc6d' : r() < 0.6 ? '#76ad4f' : '#5d9a42';
+    for (let t = 0; t < tall; t++) g.fillRect(bx + (t > 2 ? lean : 0), baseY - rows - 1 - t, 1, 1);
+  }
+  // a couple of little flowers
+  for (let f = 0; f < 2; f++) {
+    if (k < 0.6) break;
+    const fx = x + 8 + Math.floor(r() * (w - 16));
+    g.fillStyle = f ? '#fbf8ef' : '#f2c94c';
+    g.fillRect(fx, baseY - rows - 3, 1, 1);
+  }
+  g.globalAlpha = 1;
 }
-
 // The host sends the ledges whenever windows move, open or close (in CSS px).
 function setLedges(list) {
   const next = Array.isArray(list) ? list
@@ -1843,17 +1848,35 @@ function setLedges(list) {
   composeLedges();
 }
 
-// ── little things to jump on: a stump, a rock, a log, a crate, scattered along the ground ──
+// ── grass patches: hidden spots along the ground that grow a tuft of grass while a fawn is
+//    leaping onto one, standing, grazing or sleeping on it — and fade away once she leaves ──
 function layoutProps(ground) {
+  const old = PROPS;
   PROPS = [];
   if (!OPT.props || !ground) return;
   const span = ground.x1 - ground.x0, n = clamp(Math.round(span / 420), 2, 5), r = mulberry32(31);
   const slot = span / n;
   for (let i = 0; i < n; i++) {
-    const k = PROP_KINDS[(i + Math.floor(r() * 4)) % PROP_KINDS.length];
     const cx = ground.x0 + slot * (i + 0.5) + (r() - 0.5) * slot * 0.4;
-    PROPS.push({ ...k, x: Math.round(cx - k.w / 2), y: ground.y });
+    PROPS.push({ kind: 'grass', w: GRASS_W, h: GRASS_H, x: Math.round(cx - GRASS_W / 2), y: ground.y,
+      vis: old[i] ? old[i].vis : 0 });
   }
+}
+// Is a fawn on patch i (or on her way onto it)? Hopping off counts as leaving.
+function grassInUse(i) {
+  const id = 'prop' + i;
+  return herd.some(d => d.state === 'leap' ? d.leap && d.leap.id === id : d.ledgeId === id);
+}
+function updateGrass(dt) {
+  if (!PROPS.length) return;
+  let changed = false;
+  PROPS.forEach((p, i) => {
+    const want = grassInUse(i) ? 1 : 0;
+    if (Math.abs(want - p.vis) < 0.01) { if (p.vis !== want) { p.vis = want; changed = true; } return; }
+    p.vis += (want - p.vis) * Math.min(1, dt * (want ? 9 : 4));   // grows in quickly, fades out gently
+    changed = true;
+  });
+  if (changed) drawPropCanvas(groundLedge());
 }
 function composeLedges() {
   // the ground is the host's, or (on the plain strip) just the bottom line
@@ -1933,7 +1956,7 @@ syncOptionBoxes();
 
 // Dev hook for the console / Design Lab, e.g. window.deerDebug.renderState('graze', 1.2)
 window.deerDebug = {
-  get deer() { return herd[0]; }, herd, social, OPT, get ledges() { return LEDGES; },
+  get deer() { return herd[0]; }, herd, social, OPT, get ledges() { return LEDGES; }, get props() { return PROPS; },
   hopTo(id, who = 0) { asDeer(herd[who], () => goToLedge(ledgeById(id))); }, setAuto, doAction, sprite: dc, get auto() { return auto; }, openLab() { labEl.classList.add('open'); renderLab(); },
   // Render one pose synchronously (works even when rAF is paused): renderState('graze', 1.2, {lie: 1})
   renderState(state, t = 1, extra = {}) {

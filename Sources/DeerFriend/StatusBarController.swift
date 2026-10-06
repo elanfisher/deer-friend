@@ -31,7 +31,7 @@ enum DeerOption: String, CaseIterable {
         case .follow: return "Follow the Cursor"
         case .shy: return "Move Out of the Way When Hovered"
         case .onTop: return "Show in Front of Windows"
-        case .props: return "Little Things to Jump On"
+        case .props: return "Grass Patches to Rest On"
         }
     }
 
